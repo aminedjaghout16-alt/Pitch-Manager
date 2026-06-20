@@ -1,2 +1,0 @@
-npm uninstall better-sqlite3
-npm install @libsql/client
