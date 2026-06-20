@@ -1,139 +1,1009 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pitch Manager</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css">
-</head>
-<body>
-  <!-- Auth Screens -->
-  <div id="auth-screen" class="auth-screen">
-    <div class="auth-container">
-      <div class="auth-logo">
-        <div class="logo-icon">&#9917;</div>
-        <h1>Pitch Manager</h1>
-        <p class="auth-subtitle">Build your football empire</p>
-      </div>
+/* ─── Pitch Manager - Dark Green & Gold Theme ────────────────────────────── */
 
-      <!-- Login Form -->
-      <div id="login-form" class="auth-form">
-        <h2>Sign In</h2>
-        <div class="form-group">
-          <label>Username or Email</label>
-          <input type="text" id="login-username" placeholder="Enter username or email" autocomplete="username">
-        </div>
-        <div class="form-group">
-          <label>Password</label>
-          <input type="password" id="login-password" placeholder="Enter password" autocomplete="current-password">
-        </div>
-        <div id="login-error" class="form-error"></div>
-        <button class="btn btn-primary btn-full" onclick="handleLogin()">Sign In</button>
-        <p class="auth-switch">Don't have an account? <a href="#" onclick="showRegister()">Create one</a></p>
-      </div>
+:root {
+  --bg-primary: #0a0f0d;
+  --bg-secondary: #111916;
+  --bg-card: #151f1b;
+  --bg-card-hover: #1a2823;
+  --bg-input: #0d1411;
+  --border: #1e2e28;
+  --border-light: #2a3d36;
+  --green-dark: #0d3b2e;
+  --green: #1a7a5a;
+  --green-light: #22a06b;
+  --green-bright: #2ee08a;
+  --gold: #d4a843;
+  --gold-light: #e8c468;
+  --gold-dim: #a07f30;
+  --text-primary: #e8ede9;
+  --text-secondary: #8fa89b;
+  --text-muted: #5a7568;
+  --red: #e05555;
+  --red-dim: #8b3333;
+  --blue: #4a9eff;
+  --orange: #e89040;
+  --sidebar-width: 240px;
+  --header-height: 56px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow: 0 2px 8px rgba(0,0,0,0.3);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.4);
+}
 
-      <!-- Register Form -->
-      <div id="register-form" class="auth-form" style="display:none">
-        <h2>Create Account</h2>
-        <div class="form-group">
-          <label>Username</label>
-          <input type="text" id="reg-username" placeholder="Choose a username" autocomplete="username">
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" id="reg-email" placeholder="Enter your email" autocomplete="email">
-        </div>
-        <div class="form-group">
-          <label>Password</label>
-          <input type="password" id="reg-password" placeholder="Min 6 characters" autocomplete="new-password">
-        </div>
-        <div id="register-error" class="form-error"></div>
-        <button class="btn btn-primary btn-full" onclick="handleRegister()">Create Account</button>
-        <p class="auth-switch">Already have an account? <a href="#" onclick="showLogin()">Sign in</a></p>
-      </div>
-    </div>
-  </div>
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
-  <!-- Club Creation Screen -->
-  <div id="club-create-screen" class="auth-screen" style="display:none">
-    <div class="auth-container">
-      <div class="auth-logo">
-        <div class="logo-icon">&#9917;</div>
-        <h1>Create Your Club</h1>
-        <p class="auth-subtitle">Establish your football legacy</p>
-      </div>
-      <div class="auth-form">
-        <div class="form-group">
-          <label>Club Name</label>
-          <input type="text" id="club-name" placeholder="e.g. FC Phoenix">
-        </div>
-        <div class="form-group">
-          <label>Stadium Name</label>
-          <input type="text" id="club-stadium" placeholder="e.g. Phoenix Arena">
-        </div>
-        <div class="form-group">
-          <label>City</label>
-          <input type="text" id="club-city" placeholder="e.g. Phoenix">
-        </div>
-        <div id="club-create-error" class="form-error"></div>
-        <button class="btn btn-primary btn-full" onclick="handleCreateClub()">Create Club</button>
-      </div>
-    </div>
-  </div>
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
 
-  <!-- Main App -->
-  <div id="app" class="app" style="display:none">
-    <!-- Sidebar -->
-    <nav id="sidebar" class="sidebar">
-      <div class="sidebar-header">
-        <div class="logo-small">&#9917;</div>
-        <span class="logo-text">Pitch Manager</span>
-      </div>
-      <div class="sidebar-club" id="sidebar-club"></div>
-      <ul class="nav-list">
-        <li><a href="#/dashboard" class="nav-link" data-page="dashboard"><span class="nav-icon">&#9632;</span> Dashboard</a></li>
-        <li><a href="#/squad" class="nav-link" data-page="squad"><span class="nav-icon">&#9734;</span> Squad</a></li>
-        <li><a href="#/transfers" class="nav-link" data-page="transfers"><span class="nav-icon">&#8644;</span> Transfers</a></li>
-        <li><a href="#/training" class="nav-link" data-page="training"><span class="nav-icon">&#9650;</span> Training</a></li>
-        <li><a href="#/matches" class="nav-link" data-page="matches"><span class="nav-icon">&#9898;</span> Matches</a></li>
-        <li><a href="#/league" class="nav-link" data-page="league"><span class="nav-icon">&#9878;</span> League</a></li>
-        <li><a href="#/leaderboards" class="nav-link" data-page="leaderboards"><span class="nav-icon">&#9813;</span> Leaderboards</a></li>
-        <li><a href="#/finances" class="nav-link" data-page="finances"><span class="nav-icon">&#36;</span> Finances</a></li>
-      </ul>
-      <div class="sidebar-footer">
-        <button class="btn btn-ghost btn-sm" onclick="handleLogout()">Sign Out</button>
-      </div>
-    </nav>
+/* ─── Auth Screens ───────────────────────────────────────────────────────── */
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--bg-primary) 0%, #0d2820 50%, var(--bg-primary) 100%);
+  padding: 20px;
+}
 
-    <!-- Mobile Header -->
-    <header class="mobile-header">
-      <button class="hamburger" onclick="toggleSidebar()">&#9776;</button>
-      <span class="mobile-title">Pitch Manager</span>
-      <div class="mobile-spacer"></div>
-    </header>
+.auth-container { width: 100%; max-width: 420px; }
 
-    <!-- Main Content -->
-    <main id="main-content" class="main-content">
-      <!-- Pages rendered here by JS -->
-    </main>
-  </div>
+.auth-logo {
+  text-align: center;
+  margin-bottom: 32px;
+}
 
-  <!-- Toast Notification -->
-  <div id="toast" class="toast"></div>
+.logo-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 0 20px rgba(26, 122, 90, 0.5));
+}
 
-  <!-- Modal -->
-  <div id="modal-overlay" class="modal-overlay" onclick="closeModal()">
-    <div class="modal" onclick="event.stopPropagation()">
-      <div class="modal-header">
-        <h3 id="modal-title"></h3>
-        <button class="modal-close" onclick="closeModal()">&times;</button>
-      </div>
-      <div id="modal-body" class="modal-body"></div>
-    </div>
-  </div>
+.auth-logo h1 {
+  font-size: 28px;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--green-light), var(--gold));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
 
-  <script src="/js/app.js"></script>
-</body>
-</html>
+.auth-subtitle {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.auth-form {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+}
+
+.auth-form h2 {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 24px;
+  color: var(--text-primary);
+}
+
+.auth-switch {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.auth-switch a {
+  color: var(--gold);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.auth-switch a:hover { text-decoration: underline; }
+
+/* ─── Form Elements ──────────────────────────────────────────────────────── */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.form-group input, .form-group select {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus, .form-group select:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(26, 122, 90, 0.15);
+}
+
+.form-group input::placeholder { color: var(--text-muted); }
+
+.form-error {
+  color: var(--red);
+  font-size: 13px;
+  margin-bottom: 12px;
+  min-height: 20px;
+}
+
+/* ─── Buttons ────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--green), var(--green-light));
+  color: white;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--green-light), var(--green-bright));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 122, 90, 0.3);
+}
+
+.btn-gold {
+  background: linear-gradient(135deg, var(--gold-dim), var(--gold));
+  color: #1a1a1a;
+}
+
+.btn-gold:hover {
+  background: linear-gradient(135deg, var(--gold), var(--gold-light));
+}
+
+.btn-danger {
+  background: var(--red-dim);
+  color: var(--red);
+}
+
+.btn-danger:hover { background: var(--red); color: white; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.btn-full { width: 100%; }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-xs { padding: 4px 8px; font-size: 11px; }
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* ─── Sidebar ────────────────────────────────────────────────────────────── */
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: var(--sidebar-width);
+  height: 100vh;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  transition: transform 0.3s;
+}
+
+.sidebar-header {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.logo-small {
+  font-size: 24px;
+  filter: drop-shadow(0 0 8px rgba(26, 122, 90, 0.4));
+}
+
+.logo-text {
+  font-size: 16px;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--green-light), var(--gold));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.sidebar-club {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.sidebar-club .club-name {
+  font-weight: 600;
+  color: var(--gold);
+  font-size: 14px;
+}
+
+.sidebar-club .club-info {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.nav-list {
+  list-style: none;
+  padding: 12px 0;
+  flex: 1;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 20px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+}
+
+.nav-link:hover {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.nav-link.active {
+  background: rgba(26, 122, 90, 0.1);
+  color: var(--green-light);
+  border-left-color: var(--green-light);
+}
+
+.nav-icon {
+  font-size: 14px;
+  width: 20px;
+  text-align: center;
+}
+
+.sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* ─── Mobile Header ──────────────────────────────────────────────────────── */
+.mobile-header {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-height);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+  padding: 0 16px;
+  z-index: 90;
+}
+
+.hamburger {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.mobile-title {
+  font-weight: 700;
+  font-size: 16px;
+  background: linear-gradient(135deg, var(--green-light), var(--gold));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.mobile-spacer { flex: 1; }
+
+/* ─── Main Content ───────────────────────────────────────────────────────── */
+.main-content {
+  margin-left: var(--sidebar-width);
+  padding: 28px;
+  min-height: 100vh;
+}
+
+.page-header {
+  margin-bottom: 24px;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* ─── Cards ──────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  transition: border-color 0.2s;
+}
+
+.card:hover { border-color: var(--border-light); }
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.card-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ─── Dashboard Grid ─────────────────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+}
+
+.stat-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: 800;
+  margin-top: 6px;
+  color: var(--text-primary);
+}
+
+.stat-value.gold { color: var(--gold); }
+.stat-value.green { color: var(--green-light); }
+.stat-value.red { color: var(--red); }
+
+.stat-detail {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.dashboard-grid .card.full-width {
+  grid-column: 1 / -1;
+}
+
+/* ─── Tables ─────────────────────────────────────────────────────────────── */
+.table-container {
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead {
+  background: var(--bg-secondary);
+}
+
+th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+th:hover { color: var(--text-secondary); }
+
+th.sorted { color: var(--gold); }
+
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+tr:hover td {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+tr.highlight td {
+  background: rgba(26, 122, 90, 0.08);
+  color: var(--green-light);
+  font-weight: 600;
+}
+
+tr.relegation td {
+  color: var(--red);
+}
+
+.pos-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 36px;
+  text-align: center;
+}
+
+.pos-GK { background: #2a4a3a; color: #4ae0a0; }
+.pos-CB { background: #2a3a4a; color: #4a9eff; }
+.pos-LB, .pos-RB { background: #2a3a4a; color: #6ab0ff; }
+.pos-CDM { background: #3a3a2a; color: #c0b040; }
+.pos-CM { background: #3a3a2a; color: #e0c050; }
+.pos-CAM { background: #4a3a2a; color: #e8a040; }
+.pos-LW, .pos-RW { background: #4a2a2a; color: #e07050; }
+.pos-ST { background: #4a2a2a; color: #ff5555; }
+
+.ovr-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 28px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.ovr-high { background: rgba(46, 224, 138, 0.15); color: var(--green-bright); }
+.ovr-mid { background: rgba(212, 168, 67, 0.15); color: var(--gold); }
+.ovr-low { background: rgba(224, 85, 85, 0.15); color: var(--red); }
+
+/* ─── Match Display ──────────────────────────────────────────────────────── */
+.match-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 12px;
+}
+
+.match-team {
+  text-align: center;
+  flex: 1;
+}
+
+.match-team-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.match-team-short {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.match-score {
+  font-size: 32px;
+  font-weight: 900;
+  color: var(--gold);
+  min-width: 100px;
+  text-align: center;
+  letter-spacing: 4px;
+}
+
+.match-score.pending {
+  font-size: 14px;
+  color: var(--text-muted);
+  letter-spacing: 0;
+}
+
+.match-vs {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.match-events {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.match-event {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 3px 0;
+}
+
+.match-event .minute {
+  color: var(--gold);
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+/* ─── Match List ─────────────────────────────────────────────────────────── */
+.match-list-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  font-size: 13px;
+}
+
+.match-list-item:last-child { border-bottom: none; }
+
+.match-list-team {
+  flex: 1;
+  text-align: right;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.match-list-team:last-of-type {
+  text-align: left;
+}
+
+.match-list-score {
+  min-width: 60px;
+  text-align: center;
+  font-weight: 800;
+  color: var(--gold);
+}
+
+.match-list-score.pending {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+/* ─── Training ───────────────────────────────────────────────────────────── */
+.training-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.focus-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.focus-btn:hover, .focus-btn.active {
+  border-color: var(--green);
+  color: var(--green-light);
+  background: rgba(26, 122, 90, 0.1);
+}
+
+/* ─── Fitness/Morale Bars ────────────────────────────────────────────────── */
+.bar-container {
+  width: 60px;
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.bar-green { background: var(--green-light); }
+.bar-gold { background: var(--gold); }
+.bar-red { background: var(--red); }
+
+/* ─── Toast ──────────────────────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 1000;
+  transform: translateY(100px);
+  opacity: 0;
+  transition: all 0.3s;
+  max-width: 400px;
+}
+
+.toast.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.toast.success {
+  background: var(--green-dark);
+  border: 1px solid var(--green);
+  color: var(--green-bright);
+}
+
+.toast.error {
+  background: #3a1a1a;
+  border: 1px solid var(--red-dim);
+  color: var(--red);
+}
+
+.toast.info {
+  background: #1a2a3a;
+  border: 1px solid #2a4a6a;
+  color: var(--blue);
+}
+
+/* ─── Modal ──────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 20px;
+}
+
+.modal-overlay.show {
+  display: flex;
+}
+
+.modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.modal-close:hover { color: var(--text-primary); }
+
+.modal-body {
+  padding: 20px;
+}
+
+/* ─── Player Detail Modal ────────────────────────────────────────────────── */
+.player-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.player-detail-ovr {
+  font-size: 36px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.player-detail-name {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.player-detail-info {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.player-attrs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.attr-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border-radius: var(--radius);
+}
+
+.attr-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.attr-value {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+/* ─── Filter Bar ─────────────────────────────────────────────────────────── */
+.filter-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter-bar select, .filter-bar input {
+  padding: 7px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.filter-bar select:focus, .filter-bar input:focus {
+  outline: none;
+  border-color: var(--green);
+}
+
+/* ─── Tabs ───────────────────────────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.tab {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  font-family: inherit;
+}
+
+.tab:hover { color: var(--text-secondary); }
+
+.tab.active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+
+/* ─── Money Formatting ───────────────────────────────────────────────────── */
+.money { color: var(--gold); font-weight: 600; }
+.money.negative { color: var(--red); }
+
+/* ─── Result Badges ──────────────────────────────────────────────────────── */
+.result-badge {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 22px;
+  text-align: center;
+}
+
+.result-W { background: rgba(46, 224, 138, 0.2); color: var(--green-bright); }
+.result-D { background: rgba(212, 168, 67, 0.2); color: var(--gold); }
+.result-L { background: rgba(224, 85, 85, 0.2); color: var(--red); }
+
+/* ─── Empty State ────────────────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-muted);
+}
+
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state h3 { font-size: 18px; color: var(--text-secondary); margin-bottom: 8px; }
+.empty-state p { font-size: 14px; }
+
+/* ─── Loading ────────────────────────────────────────────────────────────── */
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-muted);
+}
+
+.spinner {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--green-light);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .mobile-header {
+    display: flex;
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding: 16px;
+    padding-top: calc(var(--header-height) + 16px);
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .match-card {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .player-attrs {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-value { font-size: 22px; }
+  .page-title { font-size: 20px; }
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ─── Utility ────────────────────────────────────────────────────────────── */
+.flex { display: flex; }
+.flex-between { display: flex; align-items: center; justify-content: space-between; }
+.gap-8 { gap: 8px; }
+.gap-16 { gap: 16px; }
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.mt-24 { margin-top: 24px; }
+.mb-16 { margin-bottom: 16px; }
+.mb-24 { margin-bottom: 24px; }
+.text-center { text-align: center; }
+.text-gold { color: var(--gold); }
+.text-green { color: var(--green-light); }
+.text-red { color: var(--red); }
+.text-muted { color: var(--text-muted); }
+.text-sm { font-size: 12px; }
+.fw-700 { font-weight: 700; }
+.w-full { width: 100%; }
