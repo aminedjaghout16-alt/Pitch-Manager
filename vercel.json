@@ -7,24 +7,16 @@
       "config": {
         "includeFiles": ["public/**"]
       }
-    },
-    {
-      "src": "public/**",
-      "use": "@vercel/static"
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/server.js"
+      "source": "/api/:path*",
+      "destination": "/server.js"
     },
     {
-      "src": "/(.*\\.(css|js|png|jpg|ico|svg))",
-      "dest": "/public/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/public/index.html"
+      "source": "/(.*)",
+      "destination": "/server.js"
     }
   ]
 }
