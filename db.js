@@ -1,22 +1,21 @@
-const { createClient } = require('@libsql/client');
+const admin = require('firebase-admin');
 
-let client = null;
+let db = null;
 
 function getDb() {
-  if (!client) {
-    const url = process.env.TURSO_DATABASE_URL;
-    const authToken = process.env.TURSO_AUTH_TOKEN;
-
-    if (!url) {
-      throw new Error('TURSO_DATABASE_URL environment variable is not set');
+  if (!db) {
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId: process.env.FIREBASE_PROJECT_ID,
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        }),
+      });
     }
-
-    client = createClient({
-      url,
-      authToken,
-    });
+    db = admin.firestore();
   }
-  return client;
+  return db;
 }
 
 module.exports = { getDb };
