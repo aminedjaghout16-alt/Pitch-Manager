@@ -48,6 +48,14 @@ function barColor(val) {
   return 'bar-red';
 }
 
+// Generates a stable "random" face for a player. Seeding on the player's id
+// means each player always gets the same face (instead of a new random one
+// on every re-render), while different players look different from each other.
+function playerAvatarUrl(p) {
+  const seed = encodeURIComponent(String(p?.id ?? `${p?.firstName ?? ''}${p?.lastName ?? ''}` ?? 'player'));
+  return `https://api.dicebear.com/9.x/avataaars/svg?seed=${seed}&radius=50&backgroundType=gradientLinear&backgroundColor=2a2a3a,1a1a2a`;
+}
+
 function showToast(msg, type = 'success') {
   const toast = document.getElementById('toast');
   toast.textContent = msg;
@@ -364,7 +372,12 @@ async function renderSquad(container) {
       <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary);font-weight:500">${p.firstName} ${p.lastName}</td>
+        <td style="color:var(--text-primary);font-weight:500">
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+            ${p.firstName} ${p.lastName}
+          </div>
+        </td>
         <td>${p.age}</td>
         <td>${formatMoney(p.value)}</td>
         <td>${formatMoney(p.salary)}/w</td>
@@ -453,6 +466,7 @@ async function showPlayerDetail(playerId) {
 
     openModal('Player Profile', `
       <div class="player-detail-header">
+        <img class="player-avatar-lg" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
         <div class="player-detail-ovr ${ovrClass(p.ovr)}" style="padding:8px 12px;border-radius:8px;background:var(--bg-input)">${p.ovr}</div>
         <div>
           <div class="player-detail-name">${p.firstName} ${p.lastName}</div>
@@ -507,7 +521,12 @@ async function renderTransfers(container) {
       <tr>
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary);font-weight:500">${p.firstName} ${p.lastName}</td>
+        <td style="color:var(--text-primary);font-weight:500">
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+            ${p.firstName} ${p.lastName}
+          </div>
+        </td>
         <td>${p.age}</td>
         <td>${p.potential}</td>
         <td class="money">${formatMoney(p.askingPrice)}</td>
@@ -602,7 +621,12 @@ async function renderTraining(container) {
       <tr>
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary);font-weight:500">${p.firstName} ${p.lastName}</td>
+        <td style="color:var(--text-primary);font-weight:500">
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+            ${p.firstName} ${p.lastName}
+          </div>
+        </td>
         <td>${p.age}</td>
         <td class="text-muted">${p.potential}</td>
         <td>
@@ -893,7 +917,12 @@ async function renderFinances(container) {
     const wageRows = data.players.slice(0, 15).map(p => `
       <tr>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary)">${p.firstName} ${p.lastName}</td>
+        <td style="color:var(--text-primary)">
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+            ${p.firstName} ${p.lastName}
+          </div>
+        </td>
         <td>${p.age}</td>
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td class="money">${formatMoney(p.salary)}/w</td>
@@ -904,7 +933,12 @@ async function renderFinances(container) {
     const transferRows = data.recentTransfers.slice(0, 10).map(t => `
       <tr>
         <td>MD${t.matchday}</td>
-        <td style="color:var(--text-primary)">${t.firstName} ${t.lastName}</td>
+        <td style="color:var(--text-primary)">
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(t)}" alt="" loading="lazy">
+            ${t.firstName} ${t.lastName}
+          </div>
+        </td>
         <td>${t.toClubId === state.club?.id ? '<span class="text-green">In</span>' : '<span class="text-red">Out</span>'}</td>
         <td class="money">${formatMoney(t.fee)}</td>
       </tr>
@@ -977,7 +1011,12 @@ async function renderLeaderboards(container) {
       const rows = players.map((p, i) => `
         <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
           <td>${i + 1}</td>
-          <td style="color:var(--text-primary);font-weight:500">${p.firstName} ${p.lastName}</td>
+          <td style="color:var(--text-primary);font-weight:500">
+            <div class="player-row-name">
+              <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+              ${p.firstName} ${p.lastName}
+            </div>
+          </td>
           <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
           <td class="text-muted">${p.clubName}</td>
           <td style="font-weight:700;color:var(--gold)">${p[stat]}</td>
@@ -1080,6 +1119,7 @@ async function renderPlayerProfile(container) {
 
       <div class="card">
         <div class="player-detail-header">
+          <img class="player-avatar-lg" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
           <div class="player-detail-ovr ${ovrClass(p.ovr)}" style="padding:12px 16px;border-radius:8px;background:var(--bg-input)">${p.ovr}</div>
           <div>
             <div class="player-detail-name">${p.firstName} ${p.lastName}</div>
@@ -1144,7 +1184,12 @@ async function renderClubProfile(container) {
       <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary)">${p.firstName} ${p.lastName}</td>
+        <td style="color:var(--text-primary)">
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+            ${p.firstName} ${p.lastName}
+          </div>
+        </td>
         <td>${p.age}</td>
         <td>${p.goals}</td>
         <td>${p.assists}</td>
