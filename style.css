@@ -1180,6 +1180,8 @@ tr.relegation td {
 .pitch-player.filled .pitch-player-circle {
   background: linear-gradient(135deg, var(--green-dark), #0d4a35);
   border-color: var(--green);
+  overflow: hidden;
+  padding: 0;
 }
 
 .pitch-player.empty .pitch-player-circle {
@@ -1196,6 +1198,13 @@ tr.relegation td {
 
 .pitch-player.empty .pitch-player-ovr {
   color: var(--text-muted);
+}
+
+.pitch-player-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }
 
 .pitch-player-plus {

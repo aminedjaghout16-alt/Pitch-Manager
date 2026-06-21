@@ -796,7 +796,7 @@ function drawTacticsPage(container) {
            style="left:${slot.x}%;top:${slot.y}%"
            onclick="selectSlot(${i})">
         <div class="pitch-player-circle">
-          ${player ? `<span class="pitch-player-ovr">${player.ovr}</span>` : `<span class="pitch-player-plus">+</span>`}
+          ${player ? `<img class="pitch-player-avatar" src="${playerAvatarUrl(player)}" alt="">` : `<span class="pitch-player-plus">+</span>`}
         </div>
         <div class="pitch-player-name">
           ${player ? `${player.lastName}${isCaptain ? ' &#169;' : ''}` : slot.role}
