@@ -351,6 +351,81 @@ app.get('/api/matches/history', auth, requireClub, async(req,res)=>{
   } catch(err){res.status(500).json({error:err.message});}
 });
 
+// ─── Match Report ─────────────────────────────────────────────────────────────
+app.get('/api/matches/report/:id', auth, async(req,res)=>{
+  try {
+    const db=getDb();
+    const doc=await db.collection('matches').doc(req.params.id).get();
+    if(!doc.exists) return res.status(404).json({error:'Match not found'});
+    const m={id:doc.id,...doc.data()};
+    const [h,a]=await Promise.all([
+      db.collection('clubs').doc(m.homeTeamId).get(),
+      db.collection('clubs').doc(m.awayTeamId).get(),
+    ]);
+    const match={
+      ...m,
+      homeName:h.data()?.name||'Home',
+      homeShort:h.data()?.shortName||'HOM',
+      awayName:a.data()?.name||'Away',
+      awayShort:a.data()?.shortName||'AWY',
+    };
+    const events=Array.isArray(m.events)?m.events:[];
+    const stats={
+      home:{
+        possession:m.homePossession||50,
+        shots:m.homeShots||0,
+        shotsOnTarget:m.homeShotsOnTarget||0,
+        corners:m.homeCorners||0,
+        fouls:m.homeFouls||0,
+      },
+      away:{
+        possession:m.awayPossession||50,
+        shots:m.awayShots||0,
+        shotsOnTarget:m.awayShotsOnTarget||0,
+        corners:m.awayCorners||0,
+        fouls:m.awayFouls||0,
+      },
+    };
+    // Generate player ratings from events
+    const [hSnap,aSnap]=await Promise.all([
+      db.collection('players').where('clubId','==',m.homeTeamId).get(),
+      db.collection('players').where('clubId','==',m.awayTeamId).get(),
+    ]);
+    const hPlayers=hSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const aPlayers=aSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const goalScores={};
+    const assistCounts={};
+    const yellowCards={};
+    const redCards={};
+    for(const e of events){
+      if(e.playerId){
+        if(e.type==='goal'){goalScores[e.playerId]=(goalScores[e.playerId]||0)+1;}
+        if(e.assistId){assistCounts[e.assistId]=(assistCounts[e.assistId]||0)+1;}
+        if(e.type==='yellow'){yellowCards[e.playerId]=(yellowCards[e.playerId]||0)+1;}
+        if(e.type==='red'){redCards[e.playerId]=(redCards[e.playerId]||0)+1;}
+      }
+    }
+    const allPlayers=[...hPlayers.map(p=>({...p,team:'home'})),...aPlayers.map(p=>({...p,team:'away'}))];
+    const playerRatings=allPlayers.map(p=>{
+      const goals=goalScores[p.id]||0;
+      const assists=assistCounts[p.id]||0;
+      const yellows=yellowCards[p.id]||0;
+      const reds=redCards[p.id]||0;
+      let rating=6.5;
+      rating+=goals*0.8;
+      rating+=assists*0.4;
+      rating-=yellows*0.3;
+      rating-=reds*1.5;
+      rating+=(p.ovr-65)*0.02;
+      rating+=Math.random()*0.6-0.3;
+      rating=Math.max(4.0,Math.min(10.0,Math.round(rating*10)/10));
+      return {name:`${p.firstName} ${p.lastName}`,team:p.team,goals,assists,rating};
+    });
+    playerRatings.sort((a,b)=>b.rating-a.rating);
+    res.json({match,events,stats,playerRatings});
+  } catch(err){res.status(500).json({error:err.message});}
+});
+
 // ─── League ───────────────────────────────────────────────────────────────────
 app.get('/api/league', auth, async(req,res)=>{
   try {

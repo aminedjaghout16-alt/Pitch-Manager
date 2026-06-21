@@ -19,6 +19,10 @@ const api = {
     if (body) opts.body = JSON.stringify(body);
 
     const res = await fetch(`/api${path}`, opts);
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error('Server returned a non-JSON response');
+    }
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Request failed');
     return data;
@@ -1053,7 +1057,7 @@ async function renderMatches(container) {
 
     let userMatchHtml = '';
     if (data.userMatch && data.userMatch.simulated) {
-      const events = data.userMatch.events ? JSON.parse(data.userMatch.events) : [];
+      const events = Array.isArray(data.userMatch.events) ? data.userMatch.events : (data.userMatch.events ? JSON.parse(data.userMatch.events) : []);
       const eventsHtml = events.map(e => {
         const isHome = e.team === 'home';
         const teamName = isHome ? data.userMatch.homeShort : data.userMatch.awayShort;
