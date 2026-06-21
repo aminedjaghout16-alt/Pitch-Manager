@@ -3,20 +3,25 @@
   "builds": [
     {
       "src": "server.js",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": ["public/**"]
-      }
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "/server.js"
+      "use": "@vercel/node"
     },
     {
-      "source": "/(.*)",
-      "destination": "/server.js"
+      "src": "public/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "^/(.*\\.(css|js|png|jpg|ico|svg))$",
+      "dest": "/$1"
+    },
+    {
+      "src": "^/?$",
+      "dest": "/index.html"
     }
   ]
 }
