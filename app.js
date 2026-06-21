@@ -132,7 +132,7 @@ async function handleCreateClub() {
 
   try {
     const data = await api.post('/club/create', { name, stadium, city });
-    state.user.club_id = data.club.id;
+    state.user.clubId = data.club.id;
     state.club = data.club;
     showApp();
   } catch (e) {
@@ -162,7 +162,7 @@ async function showApp() {
       state.user = data.user;
     }
 
-    if (!state.user.club_id) {
+    if (!state.user.clubId) {
       document.getElementById('app').style.display = 'none';
       document.getElementById('club-create-screen').style.display = 'flex';
       return;
@@ -831,12 +831,12 @@ async function renderLeague(container) {
     const data = await api.get('/league');
 
     const rows = data.standings.map(s => {
-      const isUser = s.club_id === state.club?.id;
+      const isUser = s.clubId === state.club?.id;
       const isRelegation = s.position > 17;
       return `
         <tr class="${isUser ? 'highlight' : ''} ${isRelegation ? 'relegation' : ''}">
           <td>${s.position}</td>
-          <td style="color:var(--text-primary);font-weight:${isUser ? '700' : '500'};cursor:pointer" onclick="showClubProfile(${s.club_id})">${s.name}</td>
+          <td style="color:var(--text-primary);font-weight:${isUser ? '700' : '500'};cursor:pointer" onclick="showClubProfile('${s.clubId}')">${s.name}</td>
           <td>${s.played}</td>
           <td>${s.won}</td>
           <td>${s.drawn}</td>
@@ -905,7 +905,7 @@ async function renderFinances(container) {
       <tr>
         <td>MD${t.matchday}</td>
         <td style="color:var(--text-primary)">${t.first_name} ${t.last_name}</td>
-        <td>${t.to_club_id === state.club?.id ? '<span class="text-green">In</span>' : '<span class="text-red">Out</span>'}</td>
+        <td>${t.toClubId === state.club?.id ? '<span class="text-green">In</span>' : '<span class="text-red">Out</span>'}</td>
         <td class="money">${formatMoney(t.fee)}</td>
       </tr>
     `).join('');
