@@ -1148,18 +1148,166 @@ async function loadHistory() {
 
 async function simulateMatch() {
   try {
+    // Get user's match to find opponent
+    const currentData = await api.get('/matches/current');
+    const userMatch = currentData.matches?.find(m =>
+      m.homeTeamId === state.club?.id || m.awayTeamId === state.club?.id
+    );
+    if (!userMatch) {
+      showToast('No match to simulate', 'error');
+      return;
+    }
+
+    const isHome = userMatch.homeTeamId === state.club?.id;
+    const homeId = userMatch.homeTeamId;
+    const awayId = userMatch.awayTeamId;
+
+    // Get team data for formations and player names
+    let homeFormation = '4-4-2';
+    let awayFormation = '4-4-2';
+    let homePlayers = [];
+    let awayPlayers = [];
+
+    try {
+      const [homeTactics, awayTactics] = await Promise.all([
+        api.get(`/clubs/${homeId}/tactics`).catch(() => null),
+        api.get(`/clubs/${awayId}/tactics`).catch(() => null),
+      ]);
+      if (homeTactics?.tactics?.formation) homeFormation = homeTactics.tactics.formation;
+      if (awayTactics?.tactics?.formation) awayFormation = awayTactics.tactics.formation;
+      homePlayers = (homeTactics?.players || []).map(p => p.lastName || p.firstName || '');
+      awayPlayers = (awayTactics?.players || []).map(p => p.lastName || p.firstName || '');
+    } catch (e) { /* use defaults */ }
+
+    // Open match viewer overlay
+    openMatchViewer({
+      homeName: userMatch.homeName || 'Home',
+      awayName: userMatch.awayName || 'Away',
+      homeFormation,
+      awayFormation,
+      homePlayers,
+      awayPlayers,
+      homeTeamId: homeId,
+      awayTeamId: awayId,
+    });
+
+    // Simulate on server
     const data = await api.post('/matches/simulate');
+
+    // Get the full match report for events
+    let matchEvents = [];
+    if (data.userResult) {
+      // Find the match ID from results
+      const userRes = data.results?.find(r =>
+        r.homeTeamId === state.club?.id || r.awayTeamId === state.club?.id
+      );
+      if (userRes?.matchId) {
+        try {
+          const report = await api.get(`/matches/report/${userRes.matchId}`);
+          matchEvents = report.events || [];
+        } catch (e) { /* use empty events */ }
+      }
+    }
+
+    // Feed events to the match viewer
+    feedMatchEvents({
+      events: matchEvents,
+      homeName: userMatch.homeName || 'Home',
+      awayName: userMatch.awayName || 'Away',
+      homePlayers,
+      awayPlayers,
+    });
+
+    // Show result toast when match finishes
     if (data.userResult) {
       const r = data.userResult;
       const userGoals = r.isHome ? r.homeGoals : r.awayGoals;
       const oppGoals = r.isHome ? r.awayGoals : r.homeGoals;
       const result = userGoals > oppGoals ? 'Victory!' : userGoals < oppGoals ? 'Defeat' : 'Draw';
-      showToast(`${result} ${userGoals} - ${oppGoals}`, userGoals >= oppGoals ? 'success' : 'error');
+      setTimeout(() => {
+        showToast(`${result} ${userGoals} - ${oppGoals}`, userGoals >= oppGoals ? 'success' : 'error');
+      }, 2000);
     }
-    renderMatches(document.getElementById('main-content'));
+
+    // Refresh matches page when viewer closes
+    matchViewerCloseCallback = () => {
+      renderMatches(document.getElementById('main-content'));
+    };
+
   } catch (e) {
     showToast(e.message, 'error');
   }
+}
+
+// ─── Match Viewer Integration ──────────────────────────────────────────────
+let matchViewerCloseCallback = null;
+
+function openMatchViewer(matchInfo) {
+  const overlay = document.getElementById('match-viewer-overlay');
+  overlay.style.display = 'flex';
+
+  // Set team names
+  document.getElementById('mv-home-name').textContent = matchInfo.homeName;
+  document.getElementById('mv-away-name').textContent = matchInfo.awayName;
+
+  // Set team badges (colored circles)
+  const homeBadge = document.getElementById('mv-home-badge');
+  const awayBadge = document.getElementById('mv-away-badge');
+  homeBadge.style.background = 'linear-gradient(135deg, #22a06b, #1a7a5a)';
+  awayBadge.style.background = 'linear-gradient(135deg, #4a9eff, #2a6acc)';
+
+  // Reset score
+  document.getElementById('mv-home-score').textContent = '0';
+  document.getElementById('mv-away-score').textContent = '0';
+
+  // Clear commentary
+  document.getElementById('mv-commentary-list').innerHTML = '';
+
+  // Initialize the viewer
+  const canvas = document.getElementById('mv-canvas');
+  MatchViewer.init(canvas, {
+    events: [],
+    homeName: matchInfo.homeName,
+    awayName: matchInfo.awayName,
+    homePlayers: matchInfo.homePlayers,
+    awayPlayers: matchInfo.awayPlayers,
+  }, matchInfo.homeFormation, matchInfo.awayFormation);
+
+  MatchViewer.start();
+}
+
+function feedMatchEvents(matchData) {
+  // Re-init with actual events
+  const mvState = MatchViewer.getState();
+  if (!mvState) return;
+
+  const canvas = document.getElementById('mv-canvas');
+  MatchViewer.stop();
+
+  MatchViewer.init(canvas, matchData, mvState.homeFormation, mvState.awayFormation);
+  MatchViewer.start();
+}
+
+function closeMatchViewer() {
+  MatchViewer.stop();
+  document.getElementById('match-viewer-overlay').style.display = 'none';
+  if (matchViewerCloseCallback) {
+    matchViewerCloseCallback();
+    matchViewerCloseCallback = null;
+  }
+}
+
+function mvTogglePause() {
+  const paused = MatchViewer.togglePause();
+  const btn = document.getElementById('mv-pause-btn');
+  btn.innerHTML = paused ? '&#9654; Play' : '&#9646;&#9646; Pause';
+}
+
+function mvSetSpeed(speed) {
+  MatchViewer.setSpeed(speed);
+  document.querySelectorAll('.mv-speed').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.speed) === speed);
+  });
 }
 
 async function advanceMatchday() {

@@ -277,6 +277,19 @@ app.post('/api/tactics', auth, requireClub, async(req,res)=>{
 });
 
 // ─── Match Routes ─────────────────────────────────────────────────────────────
+app.get('/api/clubs/:id/tactics', auth, async(req,res)=>{
+  try {
+    const db=getDb();
+    const doc=await db.collection('clubs').doc(req.params.id).get();
+    if(!doc.exists) return res.status(404).json({error:'Club not found'});
+    const club=doc.data();
+    const tactics=club.tactics||{formation:'4-4-2'};
+    const squadSnap=await db.collection('players').where('clubId','==',req.params.id).get();
+    const players=squadSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.ovr-a.ovr);
+    res.json({tactics,players});
+  } catch(err){res.status(500).json({error:err.message});}
+});
+
 app.get('/api/matches/current', auth, requireClub, async(req,res)=>{
   try {
     const db=getDb();
