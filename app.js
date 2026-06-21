@@ -69,6 +69,18 @@ function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
 }
 
+function handleAvatarError(el, firstName, lastName, size, borderWidth) {
+  const initials = (firstName[0] || '') + (lastName[0] || '');
+  const span = document.createElement('span');
+  span.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:var(--green-dark);display:inline-flex;align-items:center;justify-content:center;color:var(--green-bright);font-weight:700;font-size:${Math.max(10, Math.round(size * 0.38))}px;border:${borderWidth}px solid var(--border-color);flex-shrink:0`;
+  span.textContent = initials;
+  el.replaceWith(span);
+}
+
+function playerAvatar(player, size = 32, borderWidth = 2) {
+  return `<img src="${player.faceUrl}" alt="" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;border:${borderWidth}px solid var(--border-color);flex-shrink:0" onerror="handleAvatarError(this,'${player.firstName}','${player.lastName}',${size},${borderWidth})">`;
+}
+
 // ─── Auth ────────────────────────────────────────────────────────────────────
 function showLogin() {
   document.getElementById('login-form').style.display = 'block';
@@ -366,7 +378,7 @@ async function renderSquad(container) {
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
         <td style="color:var(--text-primary);font-weight:500">
           <div style="display:flex;align-items:center;gap:8px">
-            <img src="${p.faceUrl}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid var(--border-color)">
+            ${playerAvatar(p, 32)}
             <span>${p.firstName} ${p.lastName}</span>
           </div>
         </td>
@@ -458,7 +470,7 @@ async function showPlayerDetail(playerId) {
 
     openModal('Player Profile', `
       <div class="player-detail-header">
-        <img src="${p.faceUrl}" alt="" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:3px solid var(--border-color)">
+        ${playerAvatar(p, 64, 3)}
         <div class="player-detail-ovr ${ovrClass(p.ovr)}" style="padding:8px 12px;border-radius:8px;background:var(--bg-input)">${p.ovr}</div>
         <div>
           <div class="player-detail-name">${p.firstName} ${p.lastName}</div>
@@ -515,7 +527,7 @@ async function renderTransfers(container) {
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
         <td style="color:var(--text-primary);font-weight:500">
           <div style="display:flex;align-items:center;gap:8px">
-            <img src="${p.faceUrl}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid var(--border-color)">
+            ${playerAvatar(p, 32)}
             <span>${p.firstName} ${p.lastName}</span>
           </div>
         </td>
@@ -615,7 +627,7 @@ async function renderTraining(container) {
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
         <td style="color:var(--text-primary);font-weight:500">
           <div style="display:flex;align-items:center;gap:8px">
-            <img src="${p.faceUrl}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid var(--border-color)">
+            ${playerAvatar(p, 32)}
             <span>${p.firstName} ${p.lastName}</span>
           </div>
         </td>
@@ -911,7 +923,7 @@ async function renderFinances(container) {
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
         <td style="color:var(--text-primary)">
           <div style="display:flex;align-items:center;gap:8px">
-            <img src="${p.faceUrl}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid var(--border-color)">
+            ${playerAvatar(p, 28)}
             <span>${p.firstName} ${p.lastName}</span>
           </div>
         </td>
@@ -1000,7 +1012,7 @@ async function renderLeaderboards(container) {
           <td>${i + 1}</td>
           <td style="color:var(--text-primary);font-weight:500">
             <div style="display:flex;align-items:center;gap:8px">
-              <img src="${p.faceUrl}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid var(--border-color)">
+              ${playerAvatar(p, 28)}
               <span>${p.firstName} ${p.lastName}</span>
             </div>
           </td>
@@ -1106,7 +1118,7 @@ async function renderPlayerProfile(container) {
 
       <div class="card">
         <div class="player-detail-header">
-          <img src="${p.faceUrl}" alt="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid var(--border-color)">
+          ${playerAvatar(p, 80, 3)}
           <div class="player-detail-ovr ${ovrClass(p.ovr)}" style="padding:12px 16px;border-radius:8px;background:var(--bg-input)">${p.ovr}</div>
           <div>
             <div class="player-detail-name">${p.firstName} ${p.lastName}</div>
@@ -1173,7 +1185,7 @@ async function renderClubProfile(container) {
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
         <td style="color:var(--text-primary)">
           <div style="display:flex;align-items:center;gap:8px">
-            <img src="${p.faceUrl}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid var(--border-color)">
+            ${playerAvatar(p, 28)}
             <span>${p.firstName} ${p.lastName}</span>
           </div>
         </td>
