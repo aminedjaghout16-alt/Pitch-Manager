@@ -5,26 +5,11 @@
       "src": "api/index.js",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["public/**", "*.js", "package.json"]
+        "includeFiles": ["public/**", "*.js", "package.json", "node_modules/**"]
       }
     }
   ],
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/index.js"
-    },
-    {
-      "src": "/css/(.*)",
-      "dest": "/api/index.js"
-    },
-    {
-      "src": "/js/(.*)",
-      "dest": "/api/index.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.js"
-    }
+    { "src": "/(.*)", "dest": "/api/index.js" }
   ]
 }
