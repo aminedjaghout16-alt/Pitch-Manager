@@ -239,15 +239,15 @@ async function renderDashboard(container) {
       nextMatchHtml = `
         <div class="match-card">
           <div class="match-team">
-            <div class="match-team-name">${nextMatch.home_name}</div>
+            <div class="match-team-name">${nextMatch.homeName}</div>
             <div class="match-team-short">HOME</div>
           </div>
           <div>
-            <div class="match-vs">Matchday ${season.current_matchday}</div>
+            <div class="match-vs">Matchday ${season.currentMatchday}</div>
             <div class="match-vs" style="font-size:12px;margin-top:4px">vs</div>
           </div>
           <div class="match-team">
-            <div class="match-team-name">${nextMatch.away_name}</div>
+            <div class="match-team-name">${nextMatch.awayName}</div>
             <div class="match-team-short">AWAY</div>
           </div>
         </div>
@@ -258,19 +258,19 @@ async function renderDashboard(container) {
 
     let lastMatchHtml = '';
     if (lastMatch) {
-      const isHome = lastMatch.home_team_id === club.id;
-      const userGoals = isHome ? lastMatch.home_goals : lastMatch.away_goals;
-      const oppGoals = isHome ? lastMatch.away_goals : lastMatch.home_goals;
+      const isHome = lastMatch.homeTeamId === club.id;
+      const userGoals = isHome ? lastMatch.homeGoals : lastMatch.awayGoals;
+      const oppGoals = isHome ? lastMatch.awayGoals : lastMatch.homeGoals;
       const result = userGoals > oppGoals ? 'W' : userGoals < oppGoals ? 'L' : 'D';
 
       lastMatchHtml = `
         <div class="match-card">
           <div class="match-team">
-            <div class="match-team-name">${lastMatch.home_name}</div>
+            <div class="match-team-name">${lastMatch.homeName}</div>
           </div>
-          <div class="match-score">${lastMatch.home_goals} - ${lastMatch.away_goals}</div>
+          <div class="match-score">${lastMatch.homeGoals} - ${lastMatch.awayGoals}</div>
           <div class="match-team">
-            <div class="match-team-name">${lastMatch.away_name}</div>
+            <div class="match-team-name">${lastMatch.awayName}</div>
           </div>
         </div>
         <div class="text-center mt-8">
@@ -284,7 +284,7 @@ async function renderDashboard(container) {
     container.innerHTML = `
       <div class="page-header">
         <h1 class="page-title">Dashboard</h1>
-        <p class="page-subtitle">Season ${season.id} &middot; Matchday ${season.current_matchday} of ${season.total_matchdays}</p>
+        <p class="page-subtitle">Season ${season.id} &middot; Matchday ${season.currentMatchday} of ${season.totalMatchdays}</p>
       </div>
 
       <div class="stats-grid">
@@ -305,7 +305,7 @@ async function renderDashboard(container) {
         <div class="stat-card">
           <div class="stat-label">Weekly Wages</div>
           <div class="stat-value red">${formatMoney(totalWages)}</div>
-          <div class="stat-detail">Transfer budget: ${formatMoney(club.transfer_budget)}</div>
+          <div class="stat-detail">Transfer budget: ${formatMoney(club.transferBudget)}</div>
         </div>
       </div>
 
@@ -313,7 +313,7 @@ async function renderDashboard(container) {
         <div class="card">
           <div class="card-header">
             <span class="card-title">Next Match</span>
-            <span class="card-subtitle">Matchday ${season.current_matchday}</span>
+            <span class="card-subtitle">Matchday ${season.currentMatchday}</span>
           </div>
           ${nextMatchHtml}
         </div>
@@ -364,7 +364,7 @@ async function renderSquad(container) {
       <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary);font-weight:500">${p.first_name} ${p.last_name}</td>
+        <td style="color:var(--text-primary);font-weight:500">${p.firstName} ${p.lastName}</td>
         <td>${p.age}</td>
         <td>${formatMoney(p.value)}</td>
         <td>${formatMoney(p.salary)}/w</td>
@@ -376,7 +376,7 @@ async function renderSquad(container) {
           ${p.morale}%
           <div class="bar-container"><div class="bar-fill ${barColor(p.morale)}" style="width:${p.morale}%"></div></div>
         </td>
-        ${p.injury_type ? `<td class="text-red text-sm">${p.injury_type}</td>` : '<td></td>'}
+        ${p.injuryType ? `<td class="text-red text-sm">${p.injuryType}</td>` : '<td></td>'}
       </tr>
     `).join('');
 
@@ -455,7 +455,7 @@ async function showPlayerDetail(playerId) {
       <div class="player-detail-header">
         <div class="player-detail-ovr ${ovrClass(p.ovr)}" style="padding:8px 12px;border-radius:8px;background:var(--bg-input)">${p.ovr}</div>
         <div>
-          <div class="player-detail-name">${p.first_name} ${p.last_name}</div>
+          <div class="player-detail-name">${p.firstName} ${p.lastName}</div>
           <div class="player-detail-info">
             <span class="pos-badge pos-${p.position}">${p.position}</span>
             &middot; Age ${p.age} &middot; Potential ${p.potential}
@@ -470,7 +470,7 @@ async function showPlayerDetail(playerId) {
         <div class="attr-row"><span class="attr-label">Morale</span><span class="attr-value">${p.morale}%</span></div>
       </div>
       <div style="margin-top:16px;text-align:right">
-        <button class="btn btn-danger btn-sm" onclick="sellPlayer(${p.id}, '${p.first_name} ${p.last_name}')">List for Sale</button>
+        <button class="btn btn-danger btn-sm" onclick="sellPlayer(${p.id}, '${p.firstName} ${p.lastName}')">List for Sale</button>
       </div>
     `);
   } catch (e) {
@@ -507,14 +507,14 @@ async function renderTransfers(container) {
       <tr>
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary);font-weight:500">${p.first_name} ${p.last_name}</td>
+        <td style="color:var(--text-primary);font-weight:500">${p.firstName} ${p.lastName}</td>
         <td>${p.age}</td>
         <td>${p.potential}</td>
-        <td class="money">${formatMoney(p.asking_price)}</td>
+        <td class="money">${formatMoney(p.askingPrice)}</td>
         <td>${formatMoney(p.value)}</td>
         <td>
-          <button class="btn btn-primary btn-xs" onclick="buyPlayer(${p.id}, '${p.first_name} ${p.last_name}', ${p.asking_price})"
-            ${p.asking_price > data.budget ? 'disabled title="Insufficient budget"' : ''}>
+          <button class="btn btn-primary btn-xs" onclick="buyPlayer(${p.id}, '${p.firstName} ${p.lastName}', ${p.askingPrice})"
+            ${p.askingPrice > data.budget ? 'disabled title="Insufficient budget"' : ''}>
             Sign
           </button>
         </td>
@@ -540,7 +540,7 @@ async function renderTransfers(container) {
               <th>Name</th>
               <th onclick="sortTransfers('age')">Age</th>
               <th onclick="sortTransfers('potential')">Pot</th>
-              <th onclick="sortTransfers('asking_price')">Price</th>
+              <th onclick="sortTransfers('askingPrice')">Price</th>
               <th>Value</th>
               <th></th>
             </tr>
@@ -602,7 +602,7 @@ async function renderTraining(container) {
       <tr>
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary);font-weight:500">${p.first_name} ${p.last_name}</td>
+        <td style="color:var(--text-primary);font-weight:500">${p.firstName} ${p.lastName}</td>
         <td>${p.age}</td>
         <td class="text-muted">${p.potential}</td>
         <td>
@@ -610,7 +610,7 @@ async function renderTraining(container) {
           <div class="bar-container"><div class="bar-fill ${barColor(p.fitness)}" style="width:${p.fitness}%"></div></div>
         </td>
         <td>
-          <button class="btn btn-primary btn-xs" onclick="trainPlayer(${p.id}, '${p.first_name} ${p.last_name}')"
+          <button class="btn btn-primary btn-xs" onclick="trainPlayer(${p.id}, '${p.firstName} ${p.lastName}')"
             ${p.fitness < 30 ? 'disabled' : ''}>
             Train
           </button>
@@ -686,15 +686,15 @@ async function renderMatches(container) {
     let matchListHtml = '';
     if (data.matches && data.matches.length > 0) {
       matchListHtml = data.matches.map(m => {
-        const isUser = m.home_team_id === state.club?.id || m.away_team_id === state.club?.id;
+        const isUser = m.homeTeamId === state.club?.id || m.awayTeamId === state.club?.id;
         const clickable = m.simulated ? `onclick="showMatchReport(${m.id})" style="cursor:pointer"` : '';
         return `
           <div class="match-list-item" ${clickable} style="${isUser ? 'background:rgba(26,122,90,0.08)' : ''}">
-            <span class="match-list-team">${m.home_name}</span>
+            <span class="match-list-team">${m.homeName}</span>
             <span class="match-list-score ${m.simulated ? '' : 'pending'}">
-              ${m.simulated ? `${m.home_goals} - ${m.away_goals}` : 'vs'}
+              ${m.simulated ? `${m.homeGoals} - ${m.awayGoals}` : 'vs'}
             </span>
-            <span class="match-list-team">${m.away_name}</span>
+            <span class="match-list-team">${m.awayName}</span>
             ${m.simulated ? '<span class="text-muted text-sm">Report &rarr;</span>' : ''}
           </div>
         `;
@@ -706,8 +706,8 @@ async function renderMatches(container) {
       const events = data.userMatch.events ? JSON.parse(data.userMatch.events) : [];
       const eventsHtml = events.map(e => {
         const isHome = e.team === 'home';
-        const teamName = isHome ? data.userMatch.home_short : data.userMatch.away_short;
-        const isYou = (isHome && data.userMatch.home_team_id === state.club?.id) || (!isHome && data.userMatch.away_team_id === state.club?.id);
+        const teamName = isHome ? data.userMatch.homeShort : data.userMatch.awayShort;
+        const isYou = (isHome && data.userMatch.homeTeamId === state.club?.id) || (!isHome && data.userMatch.awayTeamId === state.club?.id);
         return `
           <div class="match-event">
             <span class="minute">${e.minute}'</span>
@@ -774,17 +774,17 @@ async function loadHistory() {
     }
 
     historyEl.innerHTML = data.matches.slice(0, 10).map(m => {
-      const isHome = m.home_team_id === state.club?.id;
-      const userGoals = isHome ? m.home_goals : m.away_goals;
-      const oppGoals = isHome ? m.away_goals : m.home_goals;
+      const isHome = m.homeTeamId === state.club?.id;
+      const userGoals = isHome ? m.homeGoals : m.awayGoals;
+      const oppGoals = isHome ? m.awayGoals : m.homeGoals;
       const result = userGoals > oppGoals ? 'W' : userGoals < oppGoals ? 'L' : 'D';
 
       return `
         <div class="match-list-item" onclick="showMatchReport(${m.id})" style="cursor:pointer">
           <span class="text-muted text-sm" style="min-width:30px">MD${m.matchday}</span>
-          <span class="match-list-team">${m.home_name}</span>
-          <span class="match-list-score">${m.home_goals} - ${m.away_goals}</span>
-          <span class="match-list-team">${m.away_name}</span>
+          <span class="match-list-team">${m.homeName}</span>
+          <span class="match-list-score">${m.homeGoals} - ${m.awayGoals}</span>
+          <span class="match-list-team">${m.awayName}</span>
           <span class="result-badge result-${result}">${result}</span>
         </div>
       `;
@@ -841,9 +841,9 @@ async function renderLeague(container) {
           <td>${s.won}</td>
           <td>${s.drawn}</td>
           <td>${s.lost}</td>
-          <td>${s.goals_for}</td>
-          <td>${s.goals_against}</td>
-          <td>${s.goal_difference > 0 ? '+' : ''}${s.goal_difference}</td>
+          <td>${s.goalsFor}</td>
+          <td>${s.goalsAgainst}</td>
+          <td>${s.goalDifference > 0 ? '+' : ''}${s.goalDifference}</td>
           <td style="font-weight:800;color:var(--gold)">${s.points}</td>
         </tr>
       `;
@@ -852,7 +852,7 @@ async function renderLeague(container) {
     container.innerHTML = `
       <div class="page-header">
         <h1 class="page-title">League Table</h1>
-        <p class="page-subtitle">Matchday ${data.season.current_matchday} of ${data.season.total_matchdays} &middot; ${data.season.status}</p>
+        <p class="page-subtitle">Matchday ${data.season.currentMatchday} of ${data.season.totalMatchdays} &middot; ${data.season.status}</p>
       </div>
 
       <div class="table-container">
@@ -893,7 +893,7 @@ async function renderFinances(container) {
     const wageRows = data.players.slice(0, 15).map(p => `
       <tr>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary)">${p.first_name} ${p.last_name}</td>
+        <td style="color:var(--text-primary)">${p.firstName} ${p.lastName}</td>
         <td>${p.age}</td>
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td class="money">${formatMoney(p.salary)}/w</td>
@@ -904,7 +904,7 @@ async function renderFinances(container) {
     const transferRows = data.recentTransfers.slice(0, 10).map(t => `
       <tr>
         <td>MD${t.matchday}</td>
-        <td style="color:var(--text-primary)">${t.first_name} ${t.last_name}</td>
+        <td style="color:var(--text-primary)">${t.firstName} ${t.lastName}</td>
         <td>${t.toClubId === state.club?.id ? '<span class="text-green">In</span>' : '<span class="text-red">Out</span>'}</td>
         <td class="money">${formatMoney(t.fee)}</td>
       </tr>
@@ -923,7 +923,7 @@ async function renderFinances(container) {
         </div>
         <div class="stat-card">
           <div class="stat-label">Transfer Budget</div>
-          <div class="stat-value green">${formatMoney(data.club.transfer_budget)}</div>
+          <div class="stat-value green">${formatMoney(data.club.transferBudget)}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Weekly Wages</div>
@@ -977,9 +977,9 @@ async function renderLeaderboards(container) {
       const rows = players.map((p, i) => `
         <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
           <td>${i + 1}</td>
-          <td style="color:var(--text-primary);font-weight:500">${p.first_name} ${p.last_name}</td>
+          <td style="color:var(--text-primary);font-weight:500">${p.firstName} ${p.lastName}</td>
           <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-          <td class="text-muted">${p.club_name}</td>
+          <td class="text-muted">${p.clubName}</td>
           <td style="font-weight:700;color:var(--gold)">${p[stat]}</td>
         </tr>
       `).join('');
@@ -1056,19 +1056,19 @@ async function renderPlayerProfile(container) {
         </div>
         <div class="stat-card">
           <div class="stat-label">Cards</div>
-          <div class="stat-value">${p.yellow_cards}Y ${p.red_cards}R</div>
+          <div class="stat-value">${p.yellowCards}Y ${p.redCards}R</div>
         </div>
       </div>
     `;
 
     let injuryHtml = '';
-    if (p.injury_type) {
+    if (p.injuryType) {
       injuryHtml = `
         <div class="card mt-16" style="border-color:var(--red)">
           <div class="card-header">
             <span class="card-title text-red">Injured</span>
           </div>
-          <p>${p.injury_type} - ${p.injury_weeks} week${p.injury_weeks !== 1 ? 's' : ''} remaining</p>
+          <p>${p.injuryType} - ${p.injuryWeeks} week${p.injuryWeeks !== 1 ? 's' : ''} remaining</p>
         </div>
       `;
     }
@@ -1082,7 +1082,7 @@ async function renderPlayerProfile(container) {
         <div class="player-detail-header">
           <div class="player-detail-ovr ${ovrClass(p.ovr)}" style="padding:12px 16px;border-radius:8px;background:var(--bg-input)">${p.ovr}</div>
           <div>
-            <div class="player-detail-name">${p.first_name} ${p.last_name}</div>
+            <div class="player-detail-name">${p.firstName} ${p.lastName}</div>
             <div class="player-detail-info">
               <span class="pos-badge pos-${p.position}">${p.position}</span>
               &middot; Age ${p.age} &middot; ${data.clubName}
@@ -1125,16 +1125,16 @@ async function renderClubProfile(container) {
     const c = data.club;
 
     const matchRows = data.recentMatches.map(m => {
-      const isHome = m.home_team_id === c.id;
-      const userGoals = isHome ? m.home_goals : m.away_goals;
-      const oppGoals = isHome ? m.away_goals : m.home_goals;
+      const isHome = m.homeTeamId === c.id;
+      const userGoals = isHome ? m.homeGoals : m.awayGoals;
+      const oppGoals = isHome ? m.awayGoals : m.homeGoals;
       const result = userGoals > oppGoals ? 'W' : userGoals < oppGoals ? 'L' : 'D';
       return `
         <div class="match-list-item">
           <span class="text-muted text-sm" style="min-width:30px">MD${m.matchday}</span>
-          <span class="match-list-team">${m.home_name}</span>
-          <span class="match-list-score">${m.home_goals} - ${m.away_goals}</span>
-          <span class="match-list-team">${m.away_name}</span>
+          <span class="match-list-team">${m.homeName}</span>
+          <span class="match-list-score">${m.homeGoals} - ${m.awayGoals}</span>
+          <span class="match-list-team">${m.awayName}</span>
           <span class="result-badge result-${result}">${result}</span>
         </div>
       `;
@@ -1144,7 +1144,7 @@ async function renderClubProfile(container) {
       <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary)">${p.first_name} ${p.last_name}</td>
+        <td style="color:var(--text-primary)">${p.firstName} ${p.lastName}</td>
         <td>${p.age}</td>
         <td>${p.goals}</td>
         <td>${p.assists}</td>
@@ -1247,7 +1247,7 @@ async function renderMatchReport(container) {
     const ratingsHtml = data.playerRatings.slice(0, 15).map(pr => `
       <tr>
         <td style="color:var(--text-primary)">${pr.name}</td>
-        <td class="text-muted">${pr.team === 'home' ? m.home_short : m.away_short}</td>
+        <td class="text-muted">${pr.team === 'home' ? m.homeShort : m.awayShort}</td>
         <td>${pr.goals > 0 ? pr.goals + 'G' : ''} ${pr.assists > 0 ? pr.assists + 'A' : ''}</td>
         <td style="font-weight:700;color:${pr.rating >= 7.5 ? 'var(--green-bright)' : pr.rating >= 6.5 ? 'var(--gold)' : 'var(--red)'}">
           ${pr.rating.toFixed(1)}
@@ -1263,12 +1263,12 @@ async function renderMatchReport(container) {
       <div class="card mb-24">
         <div class="match-card">
           <div class="match-team">
-            <div class="match-team-name">${m.home_name}</div>
+            <div class="match-team-name">${m.homeName}</div>
             <div class="match-team-short">HOME</div>
           </div>
-          <div class="match-score">${m.home_goals} - ${m.away_goals}</div>
+          <div class="match-score">${m.homeGoals} - ${m.awayGoals}</div>
           <div class="match-team">
-            <div class="match-team-name">${m.away_name}</div>
+            <div class="match-team-name">${m.awayName}</div>
             <div class="match-team-short">AWAY</div>
           </div>
         </div>
