@@ -14,7 +14,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'pitch-manager-secret-2024';
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
 
 function formatMoney(n) {
   if(n==null)return '$0';
@@ -400,7 +400,7 @@ async function createNotification(userId,type,title,message){
 
 // ─── SPA Fallback ─────────────────────────────────────────────────────────────
 app.get('*',(req,res)=>{
-  res.sendFile(path.join(__dirname,'public','index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
