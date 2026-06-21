@@ -4,10 +4,27 @@
     {
       "src": "server.js",
       "use": "@vercel/node",
-      "config": { "includeFiles": ["public/**"] }
+      "config": {
+        "includeFiles": ["public/**"]
+      }
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "/server.js" }
+    {
+      "src": "/api/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/(.*\\.(css|js|png|jpg|ico|svg))",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/index.html"
+    }
   ]
 }
