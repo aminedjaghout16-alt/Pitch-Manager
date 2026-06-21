@@ -218,6 +218,7 @@ function navigate(hash) {
     squad: renderSquad,
     transfers: renderTransfers,
     training: renderTraining,
+    tactics: renderTactics,
     matches: renderMatches,
     league: renderLeague,
     leaderboards: renderLeaderboards,
@@ -697,6 +698,331 @@ async function trainBatch() {
     const data = await api.post('/training/batch', { focus: trainingFocus });
     showToast(data.message);
     renderTraining(document.getElementById('main-content'));
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+// ─── Tactics Page ────────────────────────────────────────────────────────────
+const FORMATIONS = {
+  '4-4-2': [
+    {role:'GK',x:50,y:90},{role:'LB',x:15,y:72},{role:'CB',x:37,y:76},{role:'CB',x:63,y:76},{role:'RB',x:85,y:72},
+    {role:'LM',x:15,y:46},{role:'CM',x:37,y:52},{role:'CM',x:63,y:52},{role:'RM',x:85,y:46},
+    {role:'ST',x:37,y:20},{role:'ST',x:63,y:20}
+  ],
+  '4-3-3': [
+    {role:'GK',x:50,y:90},{role:'LB',x:15,y:72},{role:'CB',x:37,y:76},{role:'CB',x:63,y:76},{role:'RB',x:85,y:72},
+    {role:'CM',x:30,y:50},{role:'CDM',x:50,y:56},{role:'CM',x:70,y:50},
+    {role:'LW',x:20,y:22},{role:'ST',x:50,y:16},{role:'RW',x:80,y:22}
+  ],
+  '3-5-2': [
+    {role:'GK',x:50,y:90},{role:'CB',x:25,y:76},{role:'CB',x:50,y:80},{role:'CB',x:75,y:76},
+    {role:'LWB',x:10,y:50},{role:'CM',x:35,y:54},{role:'CM',x:65,y:54},{role:'RWB',x:90,y:50},
+    {role:'CAM',x:50,y:32},{role:'ST',x:37,y:16},{role:'ST',x:63,y:16}
+  ],
+  '4-2-3-1': [
+    {role:'GK',x:50,y:90},{role:'LB',x:15,y:72},{role:'CB',x:37,y:76},{role:'CB',x:63,y:76},{role:'RB',x:85,y:72},
+    {role:'CDM',x:37,y:56},{role:'CDM',x:63,y:56},
+    {role:'LW',x:20,y:34},{role:'CAM',x:50,y:34},{role:'RW',x:80,y:34},
+    {role:'ST',x:50,y:16}
+  ],
+  '5-3-2': [
+    {role:'GK',x:50,y:90},{role:'LWB',x:10,y:68},{role:'CB',x:30,y:78},{role:'CB',x:50,y:80},{role:'CB',x:70,y:78},{role:'RWB',x:90,y:68},
+    {role:'CM',x:30,y:50},{role:'CM',x:50,y:52},{role:'CM',x:70,y:50},
+    {role:'ST',x:37,y:18},{role:'ST',x:63,y:18}
+  ],
+  '3-4-3': [
+    {role:'GK',x:50,y:90},{role:'CB',x:25,y:76},{role:'CB',x:50,y:80},{role:'CB',x:75,y:76},
+    {role:'LM',x:12,y:48},{role:'CM',x:37,y:52},{role:'CM',x:63,y:52},{role:'RM',x:88,y:48},
+    {role:'LW',x:22,y:20},{role:'ST',x:50,y:14},{role:'RW',x:78,y:20}
+  ],
+  '4-1-4-1': [
+    {role:'GK',x:50,y:90},{role:'LB',x:15,y:72},{role:'CB',x:37,y:76},{role:'CB',x:63,y:76},{role:'RB',x:85,y:72},
+    {role:'CDM',x:50,y:60},
+    {role:'LM',x:15,y:40},{role:'CM',x:37,y:44},{role:'CM',x:63,y:44},{role:'RM',x:85,y:40},
+    {role:'ST',x:50,y:16}
+  ],
+};
+
+let tacticsState = {
+  formation: '4-4-2',
+  mentality: 'balanced',
+  pressing: 'normal',
+  tempo: 'normal',
+  passingStyle: 'mixed',
+  captainId: null,
+  lineup: {},
+  players: [],
+  selectedSlot: null,
+};
+
+async function renderTactics(container) {
+  try {
+    const data = await api.get('/tactics');
+    const t = data.tactics;
+    tacticsState = {
+      formation: t.formation || '4-4-2',
+      mentality: t.mentality || 'balanced',
+      pressing: t.pressing || 'normal',
+      tempo: t.tempo || 'normal',
+      passingStyle: t.passingStyle || 'mixed',
+      captainId: t.captainId || null,
+      lineup: t.lineup || {},
+      players: data.players,
+      selectedSlot: null,
+    };
+    drawTacticsPage(container);
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+function drawTacticsPage(container) {
+  const slots = FORMATIONS[tacticsState.formation];
+  const assignedIds = Object.values(tacticsState.lineup);
+  const unassigned = tacticsState.players.filter(p => !assignedIds.includes(p.id));
+
+  const formationBtns = Object.keys(FORMATIONS).map(f =>
+    `<button class="formation-btn ${tacticsState.formation === f ? 'active' : ''}" onclick="selectFormation('${f}')">${f}</button>`
+  ).join('');
+
+  const pitchSlots = slots.map((slot, i) => {
+    const playerId = tacticsState.lineup[i];
+    const player = tacticsState.players.find(p => p.id === playerId);
+    const isSelected = tacticsState.selectedSlot === i;
+    const isCaptain = player && player.id === tacticsState.captainId;
+    return `
+      <div class="pitch-player ${isSelected ? 'selected' : ''} ${player ? 'filled' : 'empty'}"
+           style="left:${slot.x}%;top:${slot.y}%"
+           onclick="selectSlot(${i})">
+        <div class="pitch-player-circle">
+          ${player ? `<span class="pitch-player-ovr">${player.ovr}</span>` : `<span class="pitch-player-plus">+</span>`}
+        </div>
+        <div class="pitch-player-name">
+          ${player ? `${player.lastName}${isCaptain ? ' &#169;' : ''}` : slot.role}
+        </div>
+        <div class="pitch-player-role">${slot.role}</div>
+      </div>
+    `;
+  }).join('');
+
+  const mentalityBtns = ['defensive','counter','balanced','attacking','all-out'].map(m =>
+    `<button class="tactic-opt ${tacticsState.mentality === m ? 'active' : ''}" onclick="setTacticOpt('mentality','${m}')">${m.replace('-',' ')}</button>`
+  ).join('');
+
+  const pressingBtns = ['low','normal','high','gegenpress'].map(p =>
+    `<button class="tactic-opt ${tacticsState.pressing === p ? 'active' : ''}" onclick="setTacticOpt('pressing','${p}')">${p === 'gegenpress' ? 'Gegenpress' : p}</button>`
+  ).join('');
+
+  const tempoBtns = ['slow','normal','fast','relentless'].map(t =>
+    `<button class="tactic-opt ${tacticsState.tempo === t ? 'active' : ''}" onclick="setTacticOpt('tempo','${t}')">${t}</button>`
+  ).join('');
+
+  const passingBtns = ['short','mixed','long','direct'].map(p =>
+    `<button class="tactic-opt ${tacticsState.passingStyle === p ? 'active' : ''}" onclick="setTacticOpt('passingStyle','${p}')">${p}</button>`
+  ).join('');
+
+  const benchHtml = unassigned.slice(0, 12).map(p => `
+    <div class="bench-player" onclick="showPlayerProfile('${p.id}')">
+      <span class="pos-badge pos-${p.position}">${p.position}</span>
+      <span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span>
+      <span class="bench-player-name">${p.firstName} ${p.lastName}</span>
+    </div>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="page-header">
+      <h1 class="page-title">Tactics</h1>
+      <p class="page-subtitle">Set your formation, lineup, and game plan</p>
+    </div>
+
+    <div class="tactics-layout">
+      <div class="tactics-left">
+        <div class="card tactics-pitch-card">
+          <div class="card-header">
+            <span class="card-title">Formation</span>
+            <div class="flex gap-8">
+              <button class="btn btn-ghost btn-sm" onclick="autoFillLineup()">Auto XI</button>
+              <button class="btn btn-primary btn-sm" onclick="saveTactics()">Save</button>
+            </div>
+          </div>
+          <div class="formation-selector">${formationBtns}</div>
+          <div class="pitch-container">
+            <div class="pitch">
+              <div class="pitch-markings">
+                <div class="pitch-center-circle"></div>
+                <div class="pitch-center-line"></div>
+                <div class="pitch-box-top"></div>
+                <div class="pitch-box-bottom"></div>
+                <div class="pitch-goal-top"></div>
+                <div class="pitch-goal-bottom"></div>
+                <div class="pitch-corner-tl"></div>
+                <div class="pitch-corner-tr"></div>
+                <div class="pitch-corner-bl"></div>
+                <div class="pitch-corner-br"></div>
+              </div>
+              ${pitchSlots}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tactics-right">
+        ${tacticsState.selectedSlot !== null ? renderSlotPicker() : ''}
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Mentality</span></div>
+          <div class="tactic-options">${mentalityBtns}</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Pressing</span></div>
+          <div class="tactic-options">${pressingBtns}</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Tempo</span></div>
+          <div class="tactic-options">${tempoBtns}</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Passing Style</span></div>
+          <div class="tactic-options">${passingBtns}</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Substitutes</span><span class="card-subtitle">${unassigned.length} available</span></div>
+          <div class="bench-list">${benchHtml || '<p class="text-muted text-sm">All players assigned</p>'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSlotPicker() {
+  const slot = FORMATIONS[tacticsState.formation][tacticsState.selectedSlot];
+  const assignedIds = Object.values(tacticsState.lineup);
+  const currentId = tacticsState.lineup[tacticsState.selectedSlot];
+
+  const candidates = tacticsState.players
+    .filter(p => p.id !== currentId || !currentId)
+    .filter(p => {
+      if (p.id && assignedIds.includes(p.id)) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const aMatch = a.position === slot.role ? 0 : 1;
+      const bMatch = b.position === slot.role ? 0 : 1;
+      if (aMatch !== bMatch) return aMatch - bMatch;
+      return b.ovr - a.ovr;
+    });
+
+  const rows = candidates.slice(0, 15).map(p => {
+    const posMatch = p.position === slot.role;
+    return `
+      <div class="slot-picker-player ${posMatch ? 'pos-match' : ''}" onclick="assignPlayerToSlot('${p.id}')">
+        <span class="pos-badge pos-${p.position}">${p.position}</span>
+        <span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span>
+        <span class="slot-picker-name">${p.firstName} ${p.lastName}</span>
+        ${p.id === tacticsState.captainId ? '<span class="captain-badge-cp">&#169;</span>' : ''}
+      </div>
+    `;
+  }).join('');
+
+  const currentPlayer = tacticsState.players.find(p => p.id === currentId);
+
+  return `
+    <div class="card slot-picker-card">
+      <div class="card-header">
+        <span class="card-title">Assign ${slot.role}</span>
+        <button class="btn btn-ghost btn-xs" onclick="clearSlot()">&times; Clear</button>
+      </div>
+      ${currentPlayer ? `
+        <div class="slot-current">
+          Current: <strong>${currentPlayer.firstName} ${currentPlayer.lastName}</strong>
+          <span class="pos-badge pos-${currentPlayer.position}">${currentPlayer.position}</span>
+          <span class="ovr-badge ${ovrClass(currentPlayer.ovr)}">${currentPlayer.ovr}</span>
+          <button class="btn btn-ghost btn-xs" onclick="setCaptain('${currentPlayer.id}')" style="margin-left:8px">&#169; Captain</button>
+        </div>
+      ` : ''}
+      <div class="slot-picker-list">${rows}</div>
+    </div>
+  `;
+}
+
+function selectFormation(f) {
+  tacticsState.formation = f;
+  tacticsState.lineup = {};
+  tacticsState.selectedSlot = null;
+  drawTacticsPage(document.getElementById('main-content'));
+}
+
+function selectSlot(i) {
+  tacticsState.selectedSlot = tacticsState.selectedSlot === i ? null : i;
+  drawTacticsPage(document.getElementById('main-content'));
+}
+
+function clearSlot() {
+  delete tacticsState.lineup[tacticsState.selectedSlot];
+  tacticsState.selectedSlot = null;
+  drawTacticsPage(document.getElementById('main-content'));
+}
+
+function assignPlayerToSlot(playerId) {
+  const prevSlot = Object.entries(tacticsState.lineup).find(([k, v]) => v === playerId);
+  if (prevSlot) delete tacticsState.lineup[prevSlot[0]];
+  tacticsState.lineup[tacticsState.selectedSlot] = playerId;
+  tacticsState.selectedSlot = null;
+  drawTacticsPage(document.getElementById('main-content'));
+}
+
+function setCaptain(playerId) {
+  tacticsState.captainId = tacticsState.captainId === playerId ? null : playerId;
+  drawTacticsPage(document.getElementById('main-content'));
+}
+
+function setTacticOpt(key, value) {
+  tacticsState[key] = value;
+  drawTacticsPage(document.getElementById('main-content'));
+}
+
+function autoFillLineup() {
+  const slots = FORMATIONS[tacticsState.formation];
+  const lineup = {};
+  const used = new Set();
+
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i];
+    const candidates = tacticsState.players
+      .filter(p => !used.has(p.id))
+      .sort((a, b) => {
+        const aMatch = a.position === slot.role ? 0 : 1;
+        const bMatch = b.position === slot.role ? 0 : 1;
+        if (aMatch !== bMatch) return aMatch - bMatch;
+        return b.ovr - a.ovr;
+      });
+    if (candidates.length > 0) {
+      lineup[i] = candidates[0].id;
+      used.add(candidates[0].id);
+    }
+  }
+  tacticsState.lineup = lineup;
+  tacticsState.selectedSlot = null;
+  drawTacticsPage(document.getElementById('main-content'));
+}
+
+async function saveTactics() {
+  try {
+    await api.post('/tactics', {
+      formation: tacticsState.formation,
+      mentality: tacticsState.mentality,
+      pressing: tacticsState.pressing,
+      tempo: tacticsState.tempo,
+      passingStyle: tacticsState.passingStyle,
+      captainId: tacticsState.captainId,
+      lineup: tacticsState.lineup,
+    });
+    showToast('Tactics saved!');
   } catch (e) {
     showToast(e.message, 'error');
   }

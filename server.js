@@ -252,6 +252,30 @@ app.post('/api/training/:playerId', auth, requireClub, async(req,res)=>{
   } catch(err){res.status(500).json({error:err.message});}
 });
 
+// ─── Tactics ─────────────────────────────────────────────────────────────────
+app.get('/api/tactics', auth, requireClub, async(req,res)=>{
+  try {
+    const db=getDb();
+    const doc=await db.collection('clubs').doc(req.user.clubId).get();
+    const club=doc.data();
+    const tactics=club.tactics||{formation:'4-4-2',mentality:'balanced',pressing:'normal',tempo:'normal',passingStyle:'mixed',captainId:null,lineup:{}};
+    const squadSnap=await db.collection('players').where('clubId','==',req.user.clubId).get();
+    const players=squadSnap.docs.map(d=>({id:d.id,...d.data()}));
+    res.json({tactics,players});
+  } catch(err){res.status(500).json({error:err.message});}
+});
+
+app.post('/api/tactics', auth, requireClub, async(req,res)=>{
+  try {
+    const {formation,mentality,pressing,tempo,passingStyle,captainId,lineup}=req.body;
+    const db=getDb();
+    await db.collection('clubs').doc(req.user.clubId).update({
+      tactics:{formation:formation||'4-4-2',mentality:mentality||'balanced',pressing:pressing||'normal',tempo:tempo||'normal',passingStyle:passingStyle||'mixed',captainId:captainId||null,lineup:lineup||{}}
+    });
+    res.json({success:true,message:'Tactics saved'});
+  } catch(err){res.status(500).json({error:err.message});}
+});
+
 // ─── Match Routes ─────────────────────────────────────────────────────────────
 app.get('/api/matches/current', auth, requireClub, async(req,res)=>{
   try {

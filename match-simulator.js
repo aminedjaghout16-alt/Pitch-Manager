@@ -1,12 +1,24 @@
 const { getDb } = require('./db');
 
+const MENTALITY_MOD = {defensive:0.85,counter:0.92,balanced:1.0,attacking:1.08,'all-out':1.15};
+const PRESSING_MOD = {low:0.9,normal:1.0,high:1.06,gegenpress:1.1};
+const TEMPO_MOD = {slow:0.92,normal:1.0,fast:1.05,relentless:1.1};
+
 async function getTeamStrength(clubId) {
   const db = getDb();
-  const snap = await db.collection('players').where('clubId','==',clubId).get();
-  const players = snap.docs.map(d => ({id:d.id,...d.data()}));
+  const [clubDoc, squadSnap] = await Promise.all([
+    db.collection('clubs').doc(clubId).get(),
+    db.collection('players').where('clubId','==',clubId).get(),
+  ]);
+  const club = clubDoc.data();
+  const players = squadSnap.docs.map(d => ({id:d.id,...d.data()}));
   if (players.length === 0) return {attack:50,defense:50,midfield:50,avgOvr:50};
 
-  const best11 = selectBest11(players);
+  const tactics = club.tactics || null;
+  const best11 = tactics && tactics.lineup && Object.keys(tactics.lineup).length >= 7
+    ? selectFromLineup(players, tactics)
+    : selectBest11(players);
+
   const avgOvr = best11.reduce((s,p) => s+p.ovr,0) / best11.length;
   const avgMorale = best11.reduce((s,p) => s+p.morale,0) / best11.length / 100;
   const avgFitness = best11.reduce((s,p) => s+p.fitness,0) / best11.length / 100;
@@ -14,10 +26,42 @@ async function getTeamStrength(clubId) {
   const attack = calcUnit(best11,['ST','LW','RW','CAM'],['shooting','pace']);
   const midfield = calcUnit(best11,['CM','CDM','CAM'],['passing','defending']);
   const defense = calcUnit(best11,['CB','LB','RB','GK'],['defending','physical']);
-  const mf = 0.8 + avgMorale * 0.4;
+
+  let mf = 0.8 + avgMorale * 0.4;
   const ff = 0.9 + avgFitness * 0.2;
 
+  if (tactics) {
+    const mentMod = MENTALITY_MOD[tactics.mentality] || 1.0;
+    const pressMod = PRESSING_MOD[tactics.pressing] || 1.0;
+    const tempMod = TEMPO_MOD[tactics.tempo] || 1.0;
+    const attackMod = mentMod * tempMod;
+    const defenseMod = (2 - mentMod) * pressMod;
+    const midMod = pressMod * tempMod;
+    return {
+      attack: attack * mf * ff * attackMod,
+      midfield: midfield * mf * ff * midMod,
+      defense: defense * mf * ff * defenseMod,
+      avgOvr: avgOvr * mf * ff
+    };
+  }
+
   return {attack:attack*mf*ff, midfield:midfield*mf*ff, defense:defense*mf*ff, avgOvr:avgOvr*mf*ff};
+}
+
+function selectFromLineup(players, tactics) {
+  const lineup = tactics.lineup;
+  const selected = [];
+  const used = new Set();
+  for (const [slotIdx, playerId] of Object.entries(lineup)) {
+    const p = players.find(pl => pl.id === playerId);
+    if (p && !used.has(p.id)) { selected.push(p); used.add(p.id); }
+  }
+  if (selected.length < 11) {
+    players.filter(p => !used.has(p.id)).sort((a,b) => b.ovr - a.ovr).forEach(p => {
+      if (selected.length < 11) { selected.push(p); used.add(p.id); }
+    });
+  }
+  return selected.slice(0, 11);
 }
 
 function calcUnit(players, positions, attrs) {
