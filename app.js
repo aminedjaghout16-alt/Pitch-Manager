@@ -48,6 +48,14 @@ function barColor(val) {
   return 'bar-red';
 }
 
+// Generates a stable "random" face for a player. Seeding on the player's id
+// means each player always gets the same face (instead of a new random one
+// on every re-render), while different players look different from each other.
+function playerAvatarUrl(p) {
+  const seed = encodeURIComponent(String(p?.id ?? `${p?.firstName ?? ''}${p?.lastName ?? ''}` ?? 'player'));
+  return `https://api.dicebear.com/9.x/avataaars/svg?seed=${seed}&radius=50&backgroundType=gradientLinear&backgroundColor=2a2a3a,1a1a2a`;
+}
+
 function showToast(msg, type = 'success') {
   const toast = document.getElementById('toast');
   toast.textContent = msg;
@@ -67,18 +75,6 @@ function closeModal() {
 
 function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
-}
-
-function handleAvatarError(el, firstName, lastName, size, borderWidth) {
-  const initials = (firstName[0] || '') + (lastName[0] || '');
-  const span = document.createElement('span');
-  span.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:var(--green-dark);display:inline-flex;align-items:center;justify-content:center;color:var(--green-bright);font-weight:700;font-size:${Math.max(10, Math.round(size * 0.38))}px;border:${borderWidth}px solid var(--border-color);flex-shrink:0`;
-  span.textContent = initials;
-  el.replaceWith(span);
-}
-
-function playerAvatar(player, size = 32, borderWidth = 2) {
-  return `<img src="${player.faceUrl}" alt="" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;border:${borderWidth}px solid var(--border-color);flex-shrink:0" onerror="handleAvatarError(this,'${player.firstName}','${player.lastName}',${size},${borderWidth})">`;
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -373,13 +369,13 @@ async function renderSquad(container) {
     };
 
     const rows = data.players.map(p => `
-      <tr onclick="showPlayerProfile('${p.id}')" style="cursor:pointer">
+      <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
         <td style="color:var(--text-primary);font-weight:500">
-          <div style="display:flex;align-items:center;gap:8px">
-            ${playerAvatar(p, 32)}
-            <span>${p.firstName} ${p.lastName}</span>
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+            ${p.firstName} ${p.lastName}
           </div>
         </td>
         <td>${p.age}</td>
@@ -470,7 +466,7 @@ async function showPlayerDetail(playerId) {
 
     openModal('Player Profile', `
       <div class="player-detail-header">
-        ${playerAvatar(p, 64, 3)}
+        <img class="player-avatar-lg" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
         <div class="player-detail-ovr ${ovrClass(p.ovr)}" style="padding:8px 12px;border-radius:8px;background:var(--bg-input)">${p.ovr}</div>
         <div>
           <div class="player-detail-name">${p.firstName} ${p.lastName}</div>
@@ -488,7 +484,7 @@ async function showPlayerDetail(playerId) {
         <div class="attr-row"><span class="attr-label">Morale</span><span class="attr-value">${p.morale}%</span></div>
       </div>
       <div style="margin-top:16px;text-align:right">
-        <button class="btn btn-danger btn-sm" onclick="sellPlayer('${p.id}', '${p.firstName} ${p.lastName}')">List for Sale</button>
+        <button class="btn btn-danger btn-sm" onclick="sellPlayer(${p.id}, '${p.firstName} ${p.lastName}')">List for Sale</button>
       </div>
     `);
   } catch (e) {
@@ -526,9 +522,9 @@ async function renderTransfers(container) {
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
         <td style="color:var(--text-primary);font-weight:500">
-          <div style="display:flex;align-items:center;gap:8px">
-            ${playerAvatar(p, 32)}
-            <span>${p.firstName} ${p.lastName}</span>
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+            ${p.firstName} ${p.lastName}
           </div>
         </td>
         <td>${p.age}</td>
@@ -536,7 +532,7 @@ async function renderTransfers(container) {
         <td class="money">${formatMoney(p.askingPrice)}</td>
         <td>${formatMoney(p.value)}</td>
         <td>
-          <button class="btn btn-primary btn-xs" onclick="buyPlayer('${p.id}', '${p.firstName} ${p.lastName}', ${p.askingPrice})"
+          <button class="btn btn-primary btn-xs" onclick="buyPlayer(${p.id}, '${p.firstName} ${p.lastName}', ${p.askingPrice})"
             ${p.askingPrice > data.budget ? 'disabled title="Insufficient budget"' : ''}>
             Sign
           </button>
@@ -626,9 +622,9 @@ async function renderTraining(container) {
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
         <td style="color:var(--text-primary);font-weight:500">
-          <div style="display:flex;align-items:center;gap:8px">
-            ${playerAvatar(p, 32)}
-            <span>${p.firstName} ${p.lastName}</span>
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+            ${p.firstName} ${p.lastName}
           </div>
         </td>
         <td>${p.age}</td>
@@ -638,7 +634,7 @@ async function renderTraining(container) {
           <div class="bar-container"><div class="bar-fill ${barColor(p.fitness)}" style="width:${p.fitness}%"></div></div>
         </td>
         <td>
-          <button class="btn btn-primary btn-xs" onclick="trainPlayer('${p.id}', '${p.firstName} ${p.lastName}')"
+          <button class="btn btn-primary btn-xs" onclick="trainPlayer(${p.id}, '${p.firstName} ${p.lastName}')"
             ${p.fitness < 30 ? 'disabled' : ''}>
             Train
           </button>
@@ -922,9 +918,9 @@ async function renderFinances(container) {
       <tr>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
         <td style="color:var(--text-primary)">
-          <div style="display:flex;align-items:center;gap:8px">
-            ${playerAvatar(p, 28)}
-            <span>${p.firstName} ${p.lastName}</span>
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+            ${p.firstName} ${p.lastName}
           </div>
         </td>
         <td>${p.age}</td>
@@ -937,7 +933,12 @@ async function renderFinances(container) {
     const transferRows = data.recentTransfers.slice(0, 10).map(t => `
       <tr>
         <td>MD${t.matchday}</td>
-        <td style="color:var(--text-primary)">${t.firstName} ${t.lastName}</td>
+        <td style="color:var(--text-primary)">
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(t)}" alt="" loading="lazy">
+            ${t.firstName} ${t.lastName}
+          </div>
+        </td>
         <td>${t.toClubId === state.club?.id ? '<span class="text-green">In</span>' : '<span class="text-red">Out</span>'}</td>
         <td class="money">${formatMoney(t.fee)}</td>
       </tr>
@@ -1008,12 +1009,12 @@ async function renderLeaderboards(container) {
 
     const renderTable = (players, stat, label) => {
       const rows = players.map((p, i) => `
-        <tr onclick="showPlayerProfile('${p.id}')" style="cursor:pointer">
+        <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
           <td>${i + 1}</td>
           <td style="color:var(--text-primary);font-weight:500">
-            <div style="display:flex;align-items:center;gap:8px">
-              ${playerAvatar(p, 28)}
-              <span>${p.firstName} ${p.lastName}</span>
+            <div class="player-row-name">
+              <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+              ${p.firstName} ${p.lastName}
             </div>
           </td>
           <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
@@ -1118,7 +1119,7 @@ async function renderPlayerProfile(container) {
 
       <div class="card">
         <div class="player-detail-header">
-          ${playerAvatar(p, 80, 3)}
+          <img class="player-avatar-lg" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
           <div class="player-detail-ovr ${ovrClass(p.ovr)}" style="padding:12px 16px;border-radius:8px;background:var(--bg-input)">${p.ovr}</div>
           <div>
             <div class="player-detail-name">${p.firstName} ${p.lastName}</div>
@@ -1180,13 +1181,13 @@ async function renderClubProfile(container) {
     }).join('');
 
     const topPlayers = data.squad.slice(0, 10).map(p => `
-      <tr onclick="showPlayerProfile('${p.id}')" style="cursor:pointer">
+      <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
         <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
         <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
         <td style="color:var(--text-primary)">
-          <div style="display:flex;align-items:center;gap:8px">
-            ${playerAvatar(p, 28)}
-            <span>${p.firstName} ${p.lastName}</span>
+          <div class="player-row-name">
+            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
+            ${p.firstName} ${p.lastName}
           </div>
         </td>
         <td>${p.age}</td>

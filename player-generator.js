@@ -120,8 +120,6 @@ function generatePlayer(clubId, forcedPosition = null, targetOvr = null) {
   const attrs = generateAttributes(position, ovr);
   const actualOvr = calculateOVR(position, attrs);
   const potential = Math.max(actualOvr, Math.min(99, actualOvr + (age < 24 ? rand(2,12) : age < 28 ? rand(0,5) : 0)));
-  const faceId = rand(0, 70);
-  const faceUrl = `https://i.pravatar.cc/150?img=${faceId}`;
   return {
     clubId: clubId || 'free',
     firstName: pick(FIRST_NAMES),
@@ -138,7 +136,6 @@ function generatePlayer(clubId, forcedPosition = null, targetOvr = null) {
     yellowCards: 0, redCards: 0,
     injuryType: null, injuryWeeks: 0, suspended: false,
     isListed: false, askingPrice: 0,
-    faceUrl,
   };
 }
 
