@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const admin = require('firebase-admin');
 const { getDb } = require('./db');
-const { generatePlayer, insertPlayer, generateTransferMarket, calculateOVR } = require('./player-generator');
+const { generatePlayer, insertPlayer, generateTransferMarket, calculateOVR, calculateValue, calculateSalary } = require('./player-generator');
 const { simulateMatchday, getTeamStrength } = require('./match-simulator');
 const { initializeGame, createUserClub, getStandings, getSeason, advanceMatchday, getCurrentMatchdayFixtures, aiTransferActions } = require('./league-manager');
 
@@ -51,7 +51,7 @@ app.post('/api/auth/register', async(req,res)=>{
     if(password.length<6) return res.status(400).json({error:'Password must be at least 6 characters'});
     const db=getDb();
     const existing=await db.collection('users').where('username','==',username).get();
-    const existingEmail=await db.collection('users').where('email','==',email).get();
+    const existingEmail=await db.collection('users').where('email','==',username).get();
     if(!existing.empty||!existingEmail.empty) return res.status(400).json({error:'Username or email already exists'});
     const hash=bcrypt.hashSync(password,10);
     const ref=await db.collection('users').add({username,email,passwordHash:hash,clubId:null,createdAt:new Date().toISOString()});
@@ -174,9 +174,9 @@ app.post('/api/transfers/buy/:playerId', auth, requireClub, async(req,res)=>{
     if(club.transferBudget<player.askingPrice) return res.status(400).json({error:'Insufficient transfer budget'});
     const squadSnap=await db.collection('players').where('clubId','==',req.user.clubId).get();
     if(squadSnap.size>=30) return res.status(400).json({error:'Squad is full (max 30)'});
-    const season=await getSeason();
+    const season = await getSeason();
     const batch=db.batch();
-    batch.update(playerDoc.ref,{clubId:req.user.clubId,isListed:false,askingPrice:0});
+    batch.update(playerDoc.ref,{clubId:req.user.clubId,isListed:false,askingPrice:0,contractYears:3});
     batch.update(clubDoc.ref,{transferBudget:admin.firestore.FieldValue.increment(-player.askingPrice),balance:admin.firestore.FieldValue.increment(-player.askingPrice)});
     batch.set(db.collection('transfers').doc(),{playerId:player.id,fromClubId:'free',toClubId:req.user.clubId,fee:player.askingPrice,matchday:season.currentMatchday,createdAt:new Date().toISOString()});
     await batch.commit();
@@ -201,7 +201,7 @@ app.post('/api/transfers/sell/:playerId', auth, requireClub, async(req,res)=>{
     const player={id:playerDoc.id,...playerDoc.data()};
     const squadSnap=await db.collection('players').where('clubId','==',req.user.clubId).get();
     if(squadSnap.size<=16) return res.status(400).json({error:'Cannot sell: minimum squad size is 16'});
-    const season=await getSeason();
+    const season = await getSeason();
     const sellPrice=Math.round(player.value*0.9);
     const listPrice=player.askingPrice||Math.round(player.value*1.1);
     const batch=db.batch();
@@ -342,9 +342,6 @@ app.post('/api/matches/advance', auth, requireClub, async(req,res)=>{
     const squadSnap=await db.collection('players').where('clubId','==',req.user.clubId).get();
     const totalWages=squadSnap.docs.reduce((s,d)=>s+d.data().salary,0);
     await db.collection('clubs').doc(req.user.clubId).update({balance:admin.firestore.FieldValue.increment(-totalWages)});
-    const batch=db.batch();
-    squadSnap.docs.forEach(d=>batch.update(d.ref,{fitness:Math.min(100,d.data().fitness+Math.floor(Math.random()*10)+10)}));
-    await batch.commit();
     const season=await getSeason();
     res.json({message:`Advanced to matchday ${season.currentMatchday}`,matchday:season.currentMatchday,season});
   } catch(err){res.status(500).json({error:err.message});}

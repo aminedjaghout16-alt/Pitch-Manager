@@ -1148,15 +1148,133 @@ async function loadHistory() {
 
 async function simulateMatch() {
   try {
-    // Get user's match to find opponent
+    // Get current match data first
     const currentData = await api.get('/matches/current');
     const userMatch = currentData.matches?.find(m =>
       m.homeTeamId === state.club?.id || m.awayTeamId === state.club?.id
     );
+
     if (!userMatch) {
       showToast('No match to simulate', 'error');
       return;
     }
+
+    const isHome = userMatch.homeTeamId === state.club?.id;
+
+    // Open match viewer
+    openMatchViewer({
+      homeName: userMatch.homeName || 'Home',
+      awayName: userMatch.awayName || 'Away',
+      homeFormation: '4-4-2',
+      awayFormation: '4-4-2',
+    });
+
+    // Simulate on server
+    const data = await api.post('/matches/simulate');
+
+    // Get match events for viewer
+    if (data.userResult && data.userResult.matchId) {
+      try {
+        const report = await api.get(`/matches/report/${data.userResult.matchId}`);
+        feedMatchEvents({
+          events: report.events || [],
+          homeName: userMatch.homeName || 'Home',
+          awayName: userMatch.awayName || 'Away',
+        });
+      } catch (e) {
+        console.error('Failed to load match report:', e);
+      }
+    }
+
+    // Show result toast
+    if (data.userResult) {
+      const r = data.userResult;
+      const userGoals = r.isHome ? r.homeGoals : r.awayGoals;
+      const oppGoals = r.isHome ? r.awayGoals : r.homeGoals;
+      const result = userGoals > oppGoals ? 'Victory!' : userGoals < oppGoals ? 'Defeat' : 'Draw';
+      setTimeout(() => {
+        showToast(`${result} ${userGoals} - ${oppGoals}`, userGoals >= oppGoals ? 'success' : 'error');
+      }, 2000);
+    }
+
+    // Refresh matches page when viewer closes
+    matchViewerCloseCallback = () => {
+      renderMatches(document.getElementById('main-content'));
+    };
+
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+// ─── Match Viewer Integration ──────────────────────────────────────────────
+let matchViewerCloseCallback = null;
+
+function openMatchViewer(matchInfo) {
+  const overlay = document.getElementById('match-viewer-overlay');
+  overlay.style.display = 'flex';
+
+  // Set team names
+  document.getElementById('mv-home-name').textContent = matchInfo.homeName;
+  document.getElementById('mv-away-name').textContent = matchInfo.awayName;
+
+  // Set team badges (colored circles)
+  const homeBadge = document.getElementById('mv-home-badge');
+  const awayBadge = document.getElementById('mv-away-badge');
+  homeBadge.style.background = 'linear-gradient(135deg, #22a06b, #1a7a5a)';
+  awayBadge.style.background = 'linear-gradient(135deg, #4a9eff, #2a6acc)';
+
+  // Reset score
+  document.getElementById('mv-home-score').textContent = '0';
+  document.getElementById('mv-away-score').textContent = '0';
+
+  // Clear commentary
+  document.getElementById('mv-commentary-list').innerHTML = '';
+
+  // Initialize the viewer
+  const canvas = document.getElementById('mv-canvas');
+  MatchViewer.init(canvas, {
+    events: [],
+    homeName: matchInfo.homeName,
+    awayName: matchInfo.awayName,
+  }, matchInfo.homeFormation, matchInfo.awayFormation);
+
+  MatchViewer.start();
+}
+
+function feedMatchEvents(matchData) {
+  // Re-init with actual events
+  const mvState = MatchViewer.getState();
+  if (!mvState) return;
+
+  const canvas = document.getElementById('mv-canvas');
+  MatchViewer.stop();
+
+  MatchViewer.init(canvas, matchData, mvState.homeForm, mvState.awayForm);
+  MatchViewer.start();
+}
+
+function closeMatchViewer() {
+  MatchViewer.stop();
+  document.getElementById('match-viewer-overlay').style.display = 'none';
+  if (matchViewerCloseCallback) {
+    matchViewerCloseCallback();
+    matchViewerCloseCallback = null;
+  }
+}
+
+function mvTogglePause() {
+  const paused = MatchViewer.togglePause();
+  const btn = document.getElementById('mv-pause-btn');
+  btn.innerHTML = paused ? '&#9654; Play' : '&#9646;&#9646; Pause';
+}
+
+function mvSetSpeed(speed) {
+  MatchViewer.setSpeed(speed);
+  document.querySelectorAll('.mv-speed').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.speed) === speed);
+  });
+}
 
     const isHome = userMatch.homeTeamId === state.club?.id;
     const homeId = userMatch.homeTeamId;

@@ -5,7 +5,16 @@
       "src": "server.js",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["index.html", "style.css", "app.js"]
+        "includeFiles": [
+          "index.html",
+          "style.css",
+          "app.js",
+          "match-viewer.js",
+          "db.js",
+          "league-manager.js",
+          "match-simulator.js",
+          "player-generator.js"
+        ]
       }
     }
   ],

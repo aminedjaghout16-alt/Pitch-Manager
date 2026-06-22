@@ -1,5 +1,5 @@
 const { getDb } = require('./db');
-const { generateSquad, insertPlayer, generateTransferMarket } = require('./player-generator');
+const { generateSquad, insertPlayer, generateTransferMarket, calculateValue, calculateSalary } = require('./player-generator');
 const { simulateMatchday } = require('./match-simulator');
 const admin = require('firebase-admin');
 
@@ -82,12 +82,200 @@ async function getSeason() {
 async function advanceMatchday() {
   const db = getDb();
   const season = await getSeason();
+  
   if(season.currentMatchday >= season.totalMatchdays){
+    // Season finished - run end of season logic
+    await endOfSeason();
     await db.collection('meta').doc('season').update({status:'finished'});
     return false;
   }
-  await db.collection('meta').doc('season').update({currentMatchday:admin.firestore.FieldValue.increment(1)});
+  
+  // Advance to next matchday
+  await db.collection('meta').doc('season').update({
+    currentMatchday: admin.firestore.FieldValue.increment(1)
+  });
+  
+  // Weekly updates
+  await weeklyUpdates();
+  
   return true;
+}
+
+// ─── Weekly Updates ─────────────────────────────────────────────────────────
+async function weeklyUpdates() {
+  const db = getDb();
+  
+  // Update all players
+  const playersSnap = await db.collection('players').get();
+  const batch = db.batch();
+  
+  for(const doc of playersSnap.docs) {
+    const player = doc.data();
+    const updates = {};
+    
+    // Recover from injury
+    if(player.injuryWeeks > 0) {
+      updates.injuryWeeks = player.injuryWeeks - 1;
+      if(updates.injuryWeeks <= 0) {
+        updates.injuryType = null;
+        updates.injuryWeeks = 0;
+      }
+    }
+    
+    // Recover from suspension (after one match)
+    if(player.suspended) {
+      updates.suspended = false;
+    }
+    
+    // Recover fitness
+    if(!player.injuryType) {
+      updates.fitness = Math.min(100, (player.fitness || 80) + rand(5,15));
+    }
+    
+    // Update form (random walk)
+    const currentForm = player.form || 70;
+    const formChange = rand(-5, 5);
+    updates.form = clamp(currentForm + formChange, 30, 100);
+    
+    // Update morale based on recent performance
+    const moraleChange = rand(-3, 3);
+    updates.morale = clamp((player.morale || 70) + moraleChange, 20, 100);
+    
+    if(Object.keys(updates).length > 0) {
+      batch.update(doc.ref, updates);
+    }
+  }
+  
+  await batch.commit();
+}
+
+// ─── End of Season ──────────────────────────────────────────────────────────
+async function endOfSeason() {
+  const db = getDb();
+  
+  // Age all players
+  const playersSnap = await db.collection('players').get();
+  const batch = db.batch();
+  
+  for(const doc of playersSnap.docs) {
+    const player = doc.data();
+    const updates = {
+      age: player.age + 1
+    };
+    
+    // Young players grow
+    if(player.age < 24 && player.ovr < player.potential) {
+      const growth = rand(1, 3);
+      const newOvr = Math.min(player.potential, player.ovr + growth);
+      
+      if(newOvr !== player.ovr) {
+        updates.ovr = newOvr;
+        // Update attributes proportionally
+        const attrs = ['pace','shooting','passing','defending','physical','goalkeeping'];
+        for(const attr of attrs) {
+          if(player[attr] < 99) {
+            updates[attr] = Math.min(99, player[attr] + rand(0, 2));
+          }
+        }
+        // Recalculate value
+        updates.value = calculateValue(newOvr, updates.age, player.position);
+        updates.salary = calculateSalary(newOvr, updates.age);
+      }
+    }
+    
+    // Older players decline
+    if(player.age >= 30) {
+      const decline = player.age >= 33 ? rand(1, 3) : rand(0, 2);
+      if(decline > 0 && player.ovr > 50) {
+        updates.ovr = Math.max(50, player.ovr - decline);
+        // Decline pace first, then physical
+        if(player.pace > 50) updates.pace = Math.max(50, player.pace - rand(1, 3));
+        if(player.physical > 50) updates.physical = Math.max(50, player.physical - rand(0, 2));
+        // Recalculate value
+        updates.value = calculateValue(updates.ovr, updates.age, player.position);
+        updates.salary = calculateSalary(updates.ovr, updates.age);
+      }
+    }
+    
+    // Update contract
+    if(player.contractYears !== undefined) {
+      updates.contractYears = player.contractYears - 1;
+      // Out of contract players become free
+      if(updates.contractYears <= 0) {
+        updates.clubId = 'free';
+        updates.isListed = true;
+        updates.askingPrice = 0;
+      }
+    }
+    
+    // Reset season stats
+    updates.goals = 0;
+    updates.assists = 0;
+    updates.appearances = 0;
+    updates.yellowCards = 0;
+    updates.redCards = 0;
+    
+    batch.update(doc.ref, updates);
+  }
+  
+  await batch.commit();
+  
+  // Start new season
+  await startNewSeason();
+}
+
+// ─── Start New Season ───────────────────────────────────────────────────────
+async function startNewSeason() {
+  const db = getDb();
+  
+  // Get current season info
+  const seasonDoc = await db.collection('meta').doc('season').get();
+  const currentSeason = seasonDoc.data();
+  
+  // Get all clubs
+  const clubsSnap = await db.collection('clubs').get();
+  const clubIds = clubsSnap.docs.map(d => d.id);
+  
+  // Generate new fixtures
+  const fixtures = generateFixtures(clubIds);
+  
+  // Delete old matches
+  const oldMatches = await db.collection('matches').get();
+  const deleteBatch = db.batch();
+  oldMatches.docs.forEach(doc => deleteBatch.delete(doc.ref));
+  await deleteBatch.commit();
+  
+  // Create new matches
+  const batchSize = 400;
+  for(let i = 0; i < fixtures.length; i += batchSize) {
+    const batch = db.batch();
+    fixtures.slice(i, i + batchSize).forEach(f => 
+      batch.set(db.collection('matches').doc(), {
+        ...f,
+        homeGoals: 0,
+        awayGoals: 0,
+        simulated: false,
+        events: []
+      })
+    );
+    await batch.commit();
+  }
+  
+  // Update season metadata
+  await db.collection('meta').doc('season').update({
+    seasonNumber: currentSeason.seasonNumber + 1,
+    currentMatchday: 1,
+    totalMatchdays: fixtures[fixtures.length - 1].matchday,
+    status: 'active'
+  });
+  
+  // Generate new transfer market players
+  const market = generateTransferMarket(30);
+  for(const p of market) await insertPlayer(p);
+}
+
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(max, val));
 }
 
 async function getCurrentMatchdayFixtures() {

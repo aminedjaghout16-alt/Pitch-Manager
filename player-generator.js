@@ -120,6 +120,10 @@ function generatePlayer(clubId, forcedPosition = null, targetOvr = null) {
   const attrs = generateAttributes(position, ovr);
   const actualOvr = calculateOVR(position, attrs);
   const potential = Math.max(actualOvr, Math.min(99, actualOvr + (age < 24 ? rand(2,12) : age < 28 ? rand(0,5) : 0)));
+  
+  // Contract length (1-5 years)
+  const contractYears = rand(1,5);
+  
   return {
     clubId: clubId || 'free',
     firstName: pick(FIRST_NAMES),
@@ -132,10 +136,12 @@ function generatePlayer(clubId, forcedPosition = null, targetOvr = null) {
     salary: calculateSalary(actualOvr, age),
     fitness: rand(85,100),
     morale: rand(60,90),
+    form: rand(60,90), // Current form (affects match performance)
     goals: 0, assists: 0, appearances: 0,
     yellowCards: 0, redCards: 0,
     injuryType: null, injuryWeeks: 0, suspended: false,
     isListed: false, askingPrice: 0,
+    contractYears, // Years remaining on contract
   };
 }
 
