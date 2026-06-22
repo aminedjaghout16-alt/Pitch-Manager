@@ -1,5 +1,7 @@
-const { getDb } = require('./db');
-const admin = require('firebase-admin');
+const { getDb, useLocalDB, FieldValue } = require('./db');
+
+// Use FieldValue from db module for local dev, or firebase-admin for production
+const admin = useLocalDB ? { firestore: { FieldValue } } : require('firebase-admin');
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const MENTALITY_MOD = {defensive:0.85,counter:0.92,balanced:1.0,attacking:1.08,'all-out':1.15};

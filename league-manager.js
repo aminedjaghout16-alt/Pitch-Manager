@@ -1,7 +1,9 @@
-const { getDb } = require('./db');
+const { getDb, useLocalDB, FieldValue } = require('./db');
 const { generateSquad, insertPlayer, generateTransferMarket, calculateValue, calculateSalary } = require('./player-generator');
 const { simulateMatchday } = require('./match-simulator');
-const admin = require('firebase-admin');
+
+// Use FieldValue from db module for local dev, or firebase-admin for production
+const admin = useLocalDB ? { firestore: { FieldValue } } : require('firebase-admin');
 
 const CLUB_DATA = [
   {name:'Greenfield United',shortName:'GRN',stadium:'Greenfield Arena',city:'Greenfield',strength:0.9},

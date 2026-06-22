@@ -5,13 +5,22 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "USE_LOCAL_DB=true node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [
+    "football",
+    "manager",
+    "game"
+  ],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "express": "^4.21.0",
+    "express": "^4.18.2",
     "firebase-admin": "^12.0.0",
     "jsonwebtoken": "^9.0.2"
   }
+}
 }

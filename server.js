@@ -3,11 +3,13 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
-const admin = require('firebase-admin');
-const { getDb } = require('./db');
+const { getDb, useLocalDB, FieldValue } = require('./db');
 const { generatePlayer, insertPlayer, generateTransferMarket, calculateOVR, calculateValue, calculateSalary } = require('./player-generator');
 const { simulateMatchday, getTeamStrength } = require('./match-simulator');
 const { initializeGame, createUserClub, getStandings, getSeason, advanceMatchday, getCurrentMatchdayFixtures, aiTransferActions } = require('./league-manager');
+
+// Use FieldValue from db module for local dev, or firebase-admin for production
+const admin = useLocalDB ? { firestore: { FieldValue } } : require('firebase-admin');
 
 const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || 'pitch-manager-secret-2024';
