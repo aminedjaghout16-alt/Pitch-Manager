@@ -166,50 +166,6 @@
     </div>
   </div>
 
-  <!-- Match Viewer Overlay (Top Eleven style 2D animation) -->
-  <div id="match-viewer-overlay" class="mv-overlay" style="display:none">
-    <div class="mv-container">
-      <!-- Top bar: teams + score -->
-      <div class="mv-topbar">
-        <div class="mv-team mv-team-home">
-          <div class="mv-team-badge" id="mv-home-badge"></div>
-          <span class="mv-team-name" id="mv-home-name">Home</span>
-        </div>
-        <div class="mv-score">
-          <span id="mv-home-score">0</span>
-          <span class="mv-score-sep">-</span>
-          <span id="mv-away-score">0</span>
-        </div>
-        <div class="mv-team mv-team-away">
-          <span class="mv-team-name" id="mv-away-name">Away</span>
-          <div class="mv-team-badge" id="mv-away-badge"></div>
-        </div>
-      </div>
-
-      <!-- Canvas pitch -->
-      <div class="mv-pitch-wrap">
-        <canvas id="mv-canvas"></canvas>
-      </div>
-
-      <!-- Controls -->
-      <div class="mv-controls">
-        <button class="mv-btn" id="mv-pause-btn" onclick="mvTogglePause()">&#9646;&#9646; Pause</button>
-        <div class="mv-speed-group">
-          <button class="mv-btn mv-speed active" data-speed="1" onclick="mvSetSpeed(1)">1x</button>
-          <button class="mv-btn mv-speed" data-speed="2" onclick="mvSetSpeed(2)">2x</button>
-          <button class="mv-btn mv-speed" data-speed="4" onclick="mvSetSpeed(4)">4x</button>
-        </div>
-        <button class="mv-btn mv-close-btn" onclick="closeMatchViewer()">Close</button>
-      </div>
-
-      <!-- Commentary -->
-      <div class="mv-commentary">
-        <div class="mv-commentary-header">Live Commentary</div>
-        <div id="mv-commentary-list" class="mv-commentary-list"></div>
-      </div>
-    </div>
-  </div>
-
   <!-- Toast Notification -->
   <div id="toast" class="toast"></div>
 
