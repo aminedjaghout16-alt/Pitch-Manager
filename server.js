@@ -254,6 +254,54 @@ app.post('/api/training/:playerId', auth, requireClub, async(req,res)=>{
   } catch(err){res.status(500).json({error:err.message});}
 });
 
+app.post('/api/training/batch', auth, requireClub, async(req,res)=>{
+  try {
+    const {focus}=req.body;
+    const db=getDb();
+    const snap=await db.collection('players').where('clubId','==',req.user.clubId).get();
+    const players=snap.docs.filter(d=>d.data().fitness>=30);
+    const clubDoc=await db.collection('clubs').doc(req.user.clubId).get();
+    const cost=players.length*10000;
+    if(clubDoc.data().balance<cost) return res.status(400).json({error:'Insufficient funds for batch training'});
+    const batch=db.batch();
+    let trained=0;
+    for(const doc of players){
+      const player=doc.data();
+      const ageFactor=player.age<23?1.5:player.age<28?1.0:player.age<32?0.6:0.3;
+      const gap=player.potential-player.ovr;
+      let improvement=gap>0?Math.min(Math.ceil(Math.random()*2*ageFactor),Math.ceil(gap/5)):Math.random()<0.2?1:0;
+      const updates={};
+      const attrs=focus==='general'?['pace','shooting','passing','defending','physical']:[focus];
+      for(const attr of attrs){
+        if(attr==='general') continue;
+        const gain=attr===focus?improvement:(improvement>0&&Math.random()<0.3?1:0);
+        if(gain>0&&player[attr]<99) updates[attr]=Math.min(99,player[attr]+gain);
+      }
+      const updated={...player,...updates};
+      const newOvr=calculateOVR(player.position,updated);
+      const fitDrop=Math.floor(Math.random()*8)+5;
+      batch.update(doc.ref,{...updates,ovr:newOvr,fitness:Math.max(40,player.fitness-fitDrop)});
+      trained++;
+    }
+    await batch.commit();
+    await clubDoc.ref.update({balance:admin.firestore.FieldValue.increment(-cost)});
+    res.json({message:`Trained ${trained} players with focus: ${focus}`});
+  } catch(err){res.status(500).json({error:err.message});}
+});
+
+// ─── Player Profile ──────────────────────────────────────────────────────────
+app.get('/api/players/:id', auth, async(req,res)=>{
+  try {
+    const db=getDb();
+    const doc=await db.collection('players').doc(req.params.id).get();
+    if(!doc.exists) return res.status(404).json({error:'Player not found'});
+    const player={id:doc.id,...doc.data()};
+    const clubDoc=await db.collection('clubs').doc(player.clubId).get();
+    const clubName=clubDoc.exists?clubDoc.data().name:'Free Agent';
+    res.json({player,clubName});
+  } catch(err){res.status(500).json({error:err.message});}
+});
+
 // ─── Tactics ─────────────────────────────────────────────────────────────────
 app.get('/api/tactics', auth, requireClub, async(req,res)=>{
   try {

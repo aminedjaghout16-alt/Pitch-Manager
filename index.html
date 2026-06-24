@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Pitch Manager</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -83,48 +83,67 @@
     </div>
   </div>
 
-  <!-- Main App -->
+  <!-- Main App - Top Eleven Style Layout -->
   <div id="app" class="app" style="display:none">
-    <!-- Sidebar -->
-    <nav id="sidebar" class="sidebar">
-      <div class="sidebar-header">
-        <div class="logo-small">&#9917;</div>
-        <span class="logo-text">Pitch Manager</span>
+    
+    <!-- Top Bar - Club Info -->
+    <header class="top-bar">
+      <div class="top-bar-left">
+        <div class="club-badge-small" id="top-bar-badge"></div>
+        <div class="club-info-mini">
+          <span class="club-name-mini" id="top-bar-club-name">Club</span>
+          <span class="club-balance-mini" id="top-bar-balance">$0</span>
+        </div>
       </div>
-      <div class="sidebar-club" id="sidebar-club"></div>
-      <ul class="nav-list">
-        <li><a href="#/dashboard" class="nav-link" data-page="dashboard"><span class="nav-icon">&#9632;</span> Dashboard</a></li>
-        <li><a href="#/squad" class="nav-link" data-page="squad"><span class="nav-icon">&#9734;</span> Squad</a></li>
-        <li><a href="#/transfers" class="nav-link" data-page="transfers"><span class="nav-icon">&#8644;</span> Transfers</a></li>
-        <li><a href="#/training" class="nav-link" data-page="training"><span class="nav-icon">&#9650;</span> Training</a></li>
-        <li><a href="#/tactics" class="nav-link" data-page="tactics"><span class="nav-icon">&#9881;</span> Tactics</a></li>
-        <li><a href="#/matches" class="nav-link" data-page="matches"><span class="nav-icon">&#9898;</span> Matches</a></li>
-        <li><a href="#/league" class="nav-link" data-page="league"><span class="nav-icon">&#9878;</span> League</a></li>
-        <li><a href="#/leaderboards" class="nav-link" data-page="leaderboards"><span class="nav-icon">&#9813;</span> Leaderboards</a></li>
-        <li><a href="#/finances" class="nav-link" data-page="finances"><span class="nav-icon">&#36;</span> Finances</a></li>
-      </ul>
-      <div class="sidebar-footer">
-        <button class="btn btn-ghost btn-sm" onclick="handleLogout()">Sign Out</button>
+      <div class="top-bar-right">
+        <button class="icon-btn" onclick="showNotifications()" id="notif-btn">
+          <span class="icon">&#128276;</span>
+          <span class="notif-badge" id="notif-badge" style="display:none">0</span>
+        </button>
+        <button class="icon-btn" onclick="handleLogout()">
+          <span class="icon">&#9211;</span>
+        </button>
       </div>
-    </nav>
-
-    <!-- Mobile Header -->
-    <header class="mobile-header">
-      <button class="hamburger" onclick="toggleSidebar()">&#9776;</button>
-      <span class="mobile-title">Pitch Manager</span>
-      <div class="mobile-spacer"></div>
     </header>
 
-    <!-- Main Content -->
+    <!-- Main Content Area -->
     <main id="main-content" class="main-content">
       <!-- Pages rendered here by JS -->
     </main>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="bottom-nav">
+      <button class="nav-tab active" data-section="home" onclick="switchSection('home')">
+        <span class="nav-icon">&#9750;</span>
+        <span class="nav-label">Home</span>
+      </button>
+      <button class="nav-tab" data-section="squad" onclick="switchSection('squad')">
+        <span class="nav-icon">&#9734;</span>
+        <span class="nav-label">Squad</span>
+      </button>
+      <button class="nav-tab" data-section="matches" onclick="switchSection('matches')">
+        <span class="nav-icon">&#9917;</span>
+        <span class="nav-label">Matches</span>
+      </button>
+      <button class="nav-tab" data-section="transfers" onclick="switchSection('transfers')">
+        <span class="nav-icon">&#8644;</span>
+        <span class="nav-label">Transfers</span>
+      </button>
+      <button class="nav-tab" data-section="club" onclick="switchSection('club')">
+        <span class="nav-icon">&#9881;</span>
+        <span class="nav-label">Club</span>
+      </button>
+    </nav>
+
+    <!-- Sub Navigation (contextual) -->
+    <nav id="sub-nav" class="sub-nav" style="display:none">
+      <!-- Populated dynamically based on section -->
+    </nav>
   </div>
 
-  <!-- Match Viewer Overlay (Top Eleven style 2D animation) -->
+  <!-- Match Viewer Overlay -->
   <div id="match-viewer-overlay" class="mv-overlay" style="display:none">
     <div class="mv-container">
-      <!-- Top bar: teams + score -->
       <div class="mv-topbar">
         <div class="mv-team mv-team-home">
           <div class="mv-team-badge" id="mv-home-badge"></div>
@@ -140,13 +159,9 @@
           <div class="mv-team-badge" id="mv-away-badge"></div>
         </div>
       </div>
-
-      <!-- Canvas pitch -->
       <div class="mv-pitch-wrap">
         <canvas id="mv-canvas"></canvas>
       </div>
-
-      <!-- Controls -->
       <div class="mv-controls">
         <button class="mv-btn" id="mv-pause-btn" onclick="mvTogglePause()">&#9654; Pause</button>
         <div class="mv-speed-group">
@@ -157,8 +172,6 @@
         </div>
         <button class="mv-btn mv-close-btn" onclick="closeMatchViewer()">Close</button>
       </div>
-
-      <!-- Commentary -->
       <div class="mv-commentary">
         <div class="mv-commentary-header">Live Commentary</div>
         <div id="mv-commentary-list" class="mv-commentary-list"></div>
@@ -177,6 +190,17 @@
         <button class="modal-close" onclick="closeModal()">&times;</button>
       </div>
       <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Action Sheet (Bottom Sheet) -->
+  <div id="action-sheet-overlay" class="action-sheet-overlay" onclick="closeActionSheet()">
+    <div class="action-sheet" onclick="event.stopPropagation()">
+      <div class="action-sheet-header">
+        <span id="action-sheet-title">Options</span>
+        <button class="action-sheet-close" onclick="closeActionSheet()">&times;</button>
+      </div>
+      <div id="action-sheet-content" class="action-sheet-content"></div>
     </div>
   </div>
 

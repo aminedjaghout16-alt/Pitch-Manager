@@ -1,11 +1,29 @@
-/* ─── Pitch Manager - Frontend Application ─────────────────────────────── */
+/* ─── Pitch Manager - Top Eleven Style App ─────────────────────────────── */
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const state = {
   token: localStorage.getItem('pm_token'),
   user: null,
   club: null,
-  currentPage: null,
+  currentSection: 'home',
+  currentSubTab: null,
+  squadSort: { col: 'ovr', order: 'desc' },
+  squadFilter: '',
+  transferSort: { col: 'ovr', order: 'desc' },
+  transferFilter: '',
+  trainingFocus: 'general',
+  tacticsState: {
+    formation: '4-4-2',
+    mentality: 'balanced',
+    pressing: 'normal',
+    tempo: 'normal',
+    passingStyle: 'mixed',
+    captainId: null,
+    lineup: {},
+    players: [],
+    selectedSlot: null,
+  },
+  matchViewerCloseCallback: null,
 };
 
 // ─── API Client ──────────────────────────────────────────────────────────────
@@ -17,7 +35,6 @@ const api = {
     };
     if (state.token) opts.headers['Authorization'] = `Bearer ${state.token}`;
     if (body) opts.body = JSON.stringify(body);
-
     const res = await fetch(`/api${path}`, opts);
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
@@ -52,9 +69,6 @@ function barColor(val) {
   return 'bar-red';
 }
 
-// Generates a stable "random" face for a player. Seeding on the player's id
-// means each player always gets the same face (instead of a new random one
-// on every re-render), while different players look different from each other.
 function playerAvatarUrl(p) {
   const seed = encodeURIComponent(String(p?.id ?? `${p?.firstName ?? ''}${p?.lastName ?? ''}` ?? 'player'));
   return `https://api.dicebear.com/9.x/avataaars/svg?seed=${seed}&radius=50&backgroundType=gradientLinear&backgroundColor=2a2a3a,1a1a2a`;
@@ -77,8 +91,19 @@ function closeModal() {
   document.getElementById('modal-overlay').classList.remove('show');
 }
 
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
+function openActionSheet(title, items) {
+  document.getElementById('action-sheet-title').textContent = title;
+  document.getElementById('action-sheet-content').innerHTML = items.map(item =>
+    `<div class="action-sheet-item ${item.danger ? 'danger' : ''}" onclick="${item.onclick}">
+      <span class="icon">${item.icon || ''}</span>
+      <span>${item.label}</span>
+    </div>`
+  ).join('');
+  document.getElementById('action-sheet-overlay').classList.add('show');
+}
+
+function closeActionSheet() {
+  document.getElementById('action-sheet-overlay').classList.remove('show');
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -99,9 +124,7 @@ async function handleLogin() {
   const password = document.getElementById('login-password').value;
   const errEl = document.getElementById('login-error');
   errEl.textContent = '';
-
   if (!username || !password) { errEl.textContent = 'All fields are required'; return; }
-
   try {
     const data = await api.post('/auth/login', { username, password });
     state.token = data.token;
@@ -119,9 +142,7 @@ async function handleRegister() {
   const password = document.getElementById('reg-password').value;
   const errEl = document.getElementById('register-error');
   errEl.textContent = '';
-
   if (!username || !email || !password) { errEl.textContent = 'All fields are required'; return; }
-
   try {
     const data = await api.post('/auth/register', { username, email, password });
     state.token = data.token;
@@ -139,9 +160,7 @@ async function handleCreateClub() {
   const city = document.getElementById('club-city').value.trim();
   const errEl = document.getElementById('club-create-error');
   errEl.textContent = '';
-
   if (!name || !stadium || !city) { errEl.textContent = 'All fields are required'; return; }
-
   try {
     const data = await api.post('/club/create', { name, stadium, city });
     state.user.clubId = data.club.id;
@@ -173,180 +192,416 @@ async function showApp() {
       const data = await api.get('/auth/me');
       state.user = data.user;
     }
-
     if (!state.user.clubId) {
       document.getElementById('app').style.display = 'none';
       document.getElementById('club-create-screen').style.display = 'flex';
       return;
     }
-
     const clubData = await api.get('/club');
     state.club = clubData.club;
-    updateSidebar();
-    navigate(location.hash || '#/dashboard');
+    updateTopBar();
+    switchSection('home');
   } catch (e) {
     handleLogout();
   }
 }
 
-function updateSidebar() {
-  const el = document.getElementById('sidebar-club');
+function updateTopBar() {
   if (!state.club) return;
-  el.innerHTML = `
-    <div class="club-name">${state.club.name}</div>
-    <div class="club-info">${state.club.stadium} &middot; ${state.club.city}</div>
-    <div class="club-info" style="margin-top:6px">Balance: <span class="money">${formatMoney(state.club.balance)}</span></div>
-  `;
+  document.getElementById('top-bar-club-name').textContent = state.club.name;
+  document.getElementById('top-bar-balance').textContent = formatMoney(state.club.balance);
+  const badge = document.getElementById('top-bar-badge');
+  badge.style.background = `linear-gradient(135deg, var(--green), var(--green-light))`;
 }
 
-// ─── Router ──────────────────────────────────────────────────────────────────
-function navigate(hash) {
-  if (location.hash !== hash) location.hash = hash;
-  const route = hash.replace('#/', '') || 'dashboard';
-  state.currentPage = route;
+// ─── Section Navigation ─────────────────────────────────────────────────────
+function switchSection(section) {
+  state.currentSection = section;
+  state.currentSubTab = null;
 
-  // Update nav active state
-  document.querySelectorAll('.nav-link').forEach(link => {
-    link.classList.toggle('active', link.dataset.page === route);
+  // Update bottom nav
+  document.querySelectorAll('.nav-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.section === section);
   });
 
-  // Close mobile sidebar
-  document.getElementById('sidebar').classList.remove('open');
+  // Update sub nav
+  updateSubNav(section);
 
-  // Render page
+  // Render section
   const main = document.getElementById('main-content');
   main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
-  const pages = {
-    dashboard: renderDashboard,
-    squad: renderSquad,
-    transfers: renderTransfers,
-    training: renderTraining,
-    tactics: renderTactics,
-    matches: renderMatches,
-    league: renderLeague,
-    leaderboards: renderLeaderboards,
-    finances: renderFinances,
-    player: renderPlayerProfile,
-    club: renderClubProfile,
-    matchReport: renderMatchReport,
+  const renderers = {
+    home: renderHome,
+    squad: renderSquadSection,
+    matches: renderMatchesSection,
+    transfers: renderTransfersSection,
+    club: renderClubSection,
   };
 
-  const render = pages[route] || renderDashboard;
+  const render = renderers[section] || renderHome;
   render(main);
 }
 
-window.addEventListener('hashchange', () => navigate(location.hash));
+function updateSubNav(section) {
+  const subNav = document.getElementById('sub-nav');
+  const main = document.getElementById('main-content');
 
-// ─── Dashboard ───────────────────────────────────────────────────────────────
-async function renderDashboard(container) {
+  const subTabs = {
+    home: [],
+    squad: [
+      { id: 'overview', label: 'Overview' },
+      { id: 'formation', label: 'Formation' },
+      { id: 'list', label: 'All Players' },
+    ],
+    matches: [
+      { id: 'next', label: 'Next Match' },
+      { id: 'results', label: 'Results' },
+      { id: 'league', label: 'League' },
+    ],
+    transfers: [
+      { id: 'market', label: 'Market' },
+      { id: 'listed', label: 'Listed' },
+      { id: 'history', label: 'History' },
+    ],
+    club: [
+      { id: 'overview', label: 'Overview' },
+      { id: 'finances', label: 'Finances' },
+      { id: 'training', label: 'Training' },
+      { id: 'tactics', label: 'Tactics' },
+    ],
+  };
+
+  const tabs = subTabs[section] || [];
+
+  if (tabs.length === 0) {
+    subNav.style.display = 'none';
+    main.classList.remove('with-sub-nav');
+    return;
+  }
+
+  subNav.style.display = 'flex';
+  main.classList.add('with-sub-nav');
+  state.currentSubTab = tabs[0].id;
+
+  subNav.innerHTML = tabs.map(t =>
+    `<button class="sub-nav-tab ${t.id === state.currentSubTab ? 'active' : ''}" onclick="switchSubTab('${t.id}')">${t.label}</button>`
+  ).join('');
+}
+
+function switchSubTab(tab) {
+  state.currentSubTab = tab;
+
+  // Update sub nav active state
+  document.querySelectorAll('.sub-nav-tab').forEach(t => {
+    t.classList.toggle('active', t.textContent.toLowerCase().replace(' ', '') === tab.toLowerCase().replace(' ', '') || t.onclick.toString().includes(`'${tab}'`));
+  });
+
+  // Re-render current section
+  const main = document.getElementById('main-content');
+  const renderers = {
+    home: renderHome,
+    squad: renderSquadSection,
+    matches: renderMatchesSection,
+    transfers: renderTransfersSection,
+    club: renderClubSection,
+  };
+
+  const render = renderers[state.currentSection] || renderHome;
+  render(main);
+}
+
+// ─── HOME / DASHBOARD ────────────────────────────────────────────────────────
+async function renderHome(container) {
   try {
     const data = await api.get('/dashboard');
     const { club, season, standing, nextMatch, lastMatch, totalWages } = data;
-
     state.club = club;
-    updateSidebar();
+    updateTopBar();
+
+    // Get squad summary
+    const squadData = await api.get('/squad?sort=ovr&order=desc');
+    const avgOvr = squadData.players.length > 0
+      ? Math.round(squadData.players.reduce((s, p) => s + p.ovr, 0) / squadData.players.length)
+      : 0;
 
     let nextMatchHtml = '';
     if (nextMatch) {
+      const isHome = nextMatch.homeTeamId === club.id;
+      const oppName = isHome ? nextMatch.awayName : nextMatch.homeName;
       nextMatchHtml = `
-        <div class="match-card">
-          <div class="match-team">
-            <div class="match-team-name">${nextMatch.homeName}</div>
-            <div class="match-team-short">HOME</div>
+        <div class="next-match-card">
+          <div class="next-match-label">
+            <span class="live-dot"></span>
+            Next Match &middot; Matchday ${season.currentMatchday}
           </div>
-          <div>
-            <div class="match-vs">Matchday ${season.currentMatchday}</div>
-            <div class="match-vs" style="font-size:12px;margin-top:4px">vs</div>
+          <div class="next-match-teams">
+            <div class="next-match-team">
+              <div class="next-match-team-badge" style="background:linear-gradient(135deg, var(--green), var(--green-light))">&#9917;</div>
+              <div class="next-match-team-name">${isHome ? club.name : oppName}</div>
+            </div>
+            <div class="next-match-vs">VS</div>
+            <div class="next-match-team">
+              <div class="next-match-team-badge" style="background:linear-gradient(135deg, #4a9eff, #2a6acc)">&#9917;</div>
+              <div class="next-match-team-name">${isHome ? oppName : club.name}</div>
+            </div>
           </div>
-          <div class="match-team">
-            <div class="match-team-name">${nextMatch.awayName}</div>
-            <div class="match-team-short">AWAY</div>
+          <div class="next-match-action">
+            <button class="btn btn-primary" onclick="switchSection('matches')">Match Center</button>
           </div>
         </div>
       `;
     } else {
-      nextMatchHtml = '<div class="empty-state"><p>No upcoming match</p></div>';
+      nextMatchHtml = `
+        <div class="next-match-card">
+          <div class="next-match-label">Season Complete</div>
+          <p class="text-muted text-sm">All matches have been played. Check the league table for final standings.</p>
+          <div class="next-match-action mt-8">
+            <button class="btn btn-ghost btn-sm" onclick="switchSection('matches');setTimeout(()=>switchSubTab('league'),50)">View League</button>
+          </div>
+        </div>
+      `;
     }
 
-    let lastMatchHtml = '';
+    let lastResultHtml = '';
     if (lastMatch) {
       const isHome = lastMatch.homeTeamId === club.id;
       const userGoals = isHome ? lastMatch.homeGoals : lastMatch.awayGoals;
       const oppGoals = isHome ? lastMatch.awayGoals : lastMatch.homeGoals;
       const result = userGoals > oppGoals ? 'W' : userGoals < oppGoals ? 'L' : 'D';
+      const resultLabel = result === 'W' ? 'Victory' : result === 'D' ? 'Draw' : 'Defeat';
 
-      lastMatchHtml = `
-        <div class="match-card">
-          <div class="match-team">
-            <div class="match-team-name">${lastMatch.homeName}</div>
-          </div>
-          <div class="match-score">${lastMatch.homeGoals} - ${lastMatch.awayGoals}</div>
-          <div class="match-team">
-            <div class="match-team-name">${lastMatch.awayName}</div>
-          </div>
-        </div>
-        <div class="text-center mt-8">
-          <span class="result-badge result-${result}" style="width:auto;padding:4px 12px;font-size:13px">${result === 'W' ? 'Victory' : result === 'D' ? 'Draw' : 'Defeat'}</span>
-        </div>
-      `;
-    } else {
-      lastMatchHtml = '<div class="empty-state"><p>No matches played yet</p></div>';
-    }
-
-    container.innerHTML = `
-      <div class="page-header">
-        <h1 class="page-title">Dashboard</h1>
-        <p class="page-subtitle">Season ${season.id} &middot; Matchday ${season.currentMatchday} of ${season.totalMatchdays}</p>
-      </div>
-
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-label">Balance</div>
-          <div class="stat-value gold">${formatMoney(club.balance)}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">League Position</div>
-          <div class="stat-value green">${standing ? standing.position + '/' + 20 : '-'}</div>
-          ${standing ? `<div class="stat-detail">${standing.points} pts &middot; ${standing.won}W ${standing.drawn}D ${standing.lost}L</div>` : ''}
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Squad Value</div>
-          <div class="stat-value">${formatMoney(data.squadSummary ? data.squadSummary.reduce((s, r) => s, 0) : 0)}</div>
-          <div class="stat-detail">${data.squadSummary ? data.squadSummary.reduce((s, r) => s + r.count, 0) : 0} players</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Weekly Wages</div>
-          <div class="stat-value red">${formatMoney(totalWages)}</div>
-          <div class="stat-detail">Transfer budget: ${formatMoney(club.transferBudget)}</div>
-        </div>
-      </div>
-
-      <div class="dashboard-grid">
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title">Next Match</span>
-            <span class="card-subtitle">Matchday ${season.currentMatchday}</span>
-          </div>
-          ${nextMatchHtml}
-        </div>
+      lastResultHtml = `
         <div class="card">
           <div class="card-header">
             <span class="card-title">Last Result</span>
+            <span class="result-badge result-${result}" style="width:auto;padding:4px 10px;font-size:11px">${resultLabel} ${userGoals}-${oppGoals}</span>
           </div>
-          ${lastMatchHtml}
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
+            <span style="font-weight:600">${lastMatch.homeName}</span>
+            <span style="font-weight:900;color:var(--gold);font-size:16px;letter-spacing:2px">${lastMatch.homeGoals} - ${lastMatch.awayGoals}</span>
+            <span style="font-weight:600">${lastMatch.awayName}</span>
+          </div>
         </div>
-        <div class="card full-width">
+      `;
+    }
+
+    container.innerHTML = `
+      <div class="home-hero">
+        <div class="home-hero-top">
+          <div>
+            <div class="home-hero-greeting">Season ${season.id || season.seasonNumber || 1}</div>
+            <div class="home-hero-club">${club.name}</div>
+          </div>
+          <div class="home-hero-season">MD ${season.currentMatchday}/${season.totalMatchdays}</div>
+        </div>
+        <div class="home-stats-row">
+          <div class="home-stat">
+            <div class="home-stat-value gold">${formatMoney(club.balance)}</div>
+            <div class="home-stat-label">Balance</div>
+          </div>
+          <div class="home-stat">
+            <div class="home-stat-value green">${standing ? standing.position + '/' + 20 : '-'}</div>
+            <div class="home-stat-label">Position</div>
+          </div>
+          <div class="home-stat">
+            <div class="home-stat-value white">${avgOvr}</div>
+            <div class="home-stat-label">Squad OVR</div>
+          </div>
+        </div>
+      </div>
+
+      ${nextMatchHtml}
+
+      <div class="quick-actions">
+        <button class="quick-action-btn" onclick="switchSection('squad');setTimeout(()=>switchSubTab('formation'),50)">
+          <span class="quick-action-icon">&#9881;</span>
+          <span class="quick-action-label">Tactics</span>
+        </button>
+        <button class="quick-action-btn" onclick="switchSection('transfers')">
+          <span class="quick-action-icon">&#8644;</span>
+          <span class="quick-action-label">Transfers</span>
+        </button>
+        <button class="quick-action-btn" onclick="switchSection('club');setTimeout(()=>switchSubTab('training'),50)">
+          <span class="quick-action-icon">&#9650;</span>
+          <span class="quick-action-label">Training</span>
+        </button>
+        <button class="quick-action-btn" onclick="switchSection('club');setTimeout(()=>switchSubTab('finances'),50)">
+          <span class="quick-action-icon">&#36;</span>
+          <span class="quick-action-label">Finances</span>
+        </button>
+      </div>
+
+      ${lastResultHtml}
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">League Standings</span>
+          <button class="btn btn-ghost btn-xs" onclick="switchSection('matches');setTimeout(()=>switchSubTab('league'),50)">View All</button>
+        </div>
+        <div id="home-league-preview">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>
+    `;
+
+    // Load league preview
+    loadLeaguePreview();
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+async function loadLeaguePreview() {
+  try {
+    const data = await api.get('/league');
+    const el = document.getElementById('home-league-preview');
+    if (!el) return;
+
+    const top5 = data.standings.slice(0, 5);
+    const userStanding = data.standings.find(s => s.clubId === state.club?.id);
+
+    let rows = top5.map(s => {
+      const isUser = s.clubId === state.club?.id;
+      return `
+        <tr class="${isUser ? 'highlight' : ''}">
+          <td style="font-weight:700">${s.position}</td>
+          <td style="color:var(--text-primary);font-weight:${isUser ? '700' : '500'}">${s.name}</td>
+          <td>${s.played}</td>
+          <td>${s.won}</td>
+          <td>${s.drawn}</td>
+          <td>${s.lost}</td>
+          <td style="font-weight:800;color:var(--gold)">${s.points}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // If user is not in top 5, add them
+    if (userStanding && userStanding.position > 5) {
+      rows += `
+        <tr><td colspan="7" style="padding:4px;color:var(--text-muted);font-size:10px">...</td></tr>
+        <tr class="highlight">
+          <td style="font-weight:700">${userStanding.position}</td>
+          <td style="color:var(--text-primary);font-weight:700">${userStanding.name}</td>
+          <td>${userStanding.played}</td>
+          <td>${userStanding.won}</td>
+          <td>${userStanding.drawn}</td>
+          <td>${userStanding.lost}</td>
+          <td style="font-weight:800;color:var(--gold)">${userStanding.points}</td>
+        </tr>
+      `;
+    }
+
+    el.innerHTML = `
+      <div class="table-container" style="border:none">
+        <table>
+          <thead><tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>Pts</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) { /* silent */ }
+}
+
+// ─── SQUAD SECTION ───────────────────────────────────────────────────────────
+async function renderSquadSection(container) {
+  const tab = state.currentSubTab || 'overview';
+
+  if (tab === 'overview') return renderSquadOverview(container);
+  if (tab === 'formation') return renderFormation(container);
+  if (tab === 'list') return renderSquadList(container);
+}
+
+async function renderSquadOverview(container) {
+  try {
+    const data = await api.get('/squad?sort=ovr&order=desc');
+    const players = data.players;
+    const avgOvr = players.length > 0 ? Math.round(players.reduce((s, p) => s + p.ovr, 0) / players.length) : 0;
+    const topPlayer = players[0];
+    const avgAge = players.length > 0 ? (players.reduce((s, p) => s + p.age, 0) / players.length).toFixed(1) : 0;
+
+    const positionCounts = {};
+    players.forEach(p => { positionCounts[p.position] = (positionCounts[p.position] || 0) + 1; });
+
+    container.innerHTML = `
+      <div class="section-header">
+        <div>
+          <div class="section-title">Squad</div>
+          <div class="section-subtitle">${players.length} players</div>
+        </div>
+      </div>
+
+      <div class="squad-overview">
+        <div class="squad-stat">
+          <div class="squad-stat-value">${avgOvr}</div>
+          <div class="squad-stat-label">Avg OVR</div>
+        </div>
+        <div class="squad-stat">
+          <div class="squad-stat-value">${avgAge}</div>
+          <div class="squad-stat-label">Avg Age</div>
+        </div>
+        <div class="squad-stat">
+          <div class="squad-stat-value">${players.length}</div>
+          <div class="squad-stat-label">Players</div>
+        </div>
+      </div>
+
+      ${topPlayer ? `
+        <div class="card">
           <div class="card-header">
-            <span class="card-title">Quick Actions</span>
+            <span class="card-title">Star Player</span>
           </div>
-          <div class="flex gap-8" style="flex-wrap:wrap">
-            <a href="#/matches" class="btn btn-primary">Play Match</a>
-            <a href="#/transfers" class="btn btn-gold">Transfer Market</a>
-            <a href="#/training" class="btn btn-ghost">Training</a>
-            <a href="#/squad" class="btn btn-ghost">View Squad</a>
+          <div class="player-card" onclick="showPlayerDetail(${topPlayer.id})">
+            <img class="player-card-avatar" src="${playerAvatarUrl(topPlayer)}" alt="">
+            <div class="player-card-info">
+              <div class="player-card-name">${topPlayer.firstName} ${topPlayer.lastName}</div>
+              <div class="player-card-meta">
+                <span class="pos-badge pos-${topPlayer.position}">${topPlayer.position}</span>
+                <span class="player-card-age">Age ${topPlayer.age}</span>
+              </div>
+            </div>
+            <div class="player-card-stats">
+              <span class="ovr-badge ${ovrClass(topPlayer.ovr)}">${topPlayer.ovr}</span>
+            </div>
           </div>
         </div>
+      ` : ''}
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Squad Breakdown</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+          ${['GK','CB','LB','RB','CDM','CM','CAM','LW','RW','ST'].map(pos => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg-input);border-radius:6px">
+              <span class="pos-badge pos-${pos}">${pos}</span>
+              <span style="font-weight:700;font-size:13px">${positionCounts[pos] || 0}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Top Players</span>
+          <button class="btn btn-ghost btn-xs" onclick="switchSubTab('list')">View All</button>
+        </div>
+        ${players.slice(0, 5).map(p => `
+          <div class="player-card" onclick="showPlayerDetail(${p.id})">
+            <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+            <div class="player-card-info">
+              <div class="player-card-name">${p.firstName} ${p.lastName}</div>
+              <div class="player-card-meta">
+                <span class="pos-badge pos-${p.position}">${p.position}</span>
+                <span class="player-card-age">Age ${p.age}</span>
+                <span style="font-size:11px;color:var(--text-muted)">${p.fitness}% fit</span>
+              </div>
+            </div>
+            <div class="player-card-stats">
+              <span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span>
+            </div>
+          </div>
+        `).join('')}
       </div>
     `;
   } catch (e) {
@@ -354,360 +609,7 @@ async function renderDashboard(container) {
   }
 }
 
-// ─── Squad Page ──────────────────────────────────────────────────────────────
-let squadSort = { col: 'ovr', order: 'desc' };
-let squadFilter = '';
-
-async function renderSquad(container) {
-  try {
-    const params = new URLSearchParams({ sort: squadSort.col, order: squadSort.order });
-    if (squadFilter) params.set('position', squadFilter);
-    const data = await api.get(`/squad?${params}`);
-
-    const positions = ['', 'GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST'];
-    const posOptions = positions.map(p => `<option value="${p}" ${squadFilter === p ? 'selected' : ''}>${p || 'All Positions'}</option>`).join('');
-
-    const sortHeader = (col, label) => {
-      const active = squadSort.col === col;
-      const arrow = active ? (squadSort.order === 'asc' ? ' &#9650;' : ' &#9660;') : '';
-      return `<th class="${active ? 'sorted' : ''}" onclick="sortSquad('${col}')">${label}${arrow}</th>`;
-    };
-
-    const rows = data.players.map(p => `
-      <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
-        <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
-        <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary);font-weight:500">
-          <div class="player-row-name">
-            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
-            ${p.firstName} ${p.lastName}
-          </div>
-        </td>
-        <td>${p.age}</td>
-        <td>${formatMoney(p.value)}</td>
-        <td>${formatMoney(p.salary)}/w</td>
-        <td>
-          ${p.fitness}%
-          <div class="bar-container"><div class="bar-fill ${barColor(p.fitness)}" style="width:${p.fitness}%"></div></div>
-        </td>
-        <td>
-          ${p.morale}%
-          <div class="bar-container"><div class="bar-fill ${barColor(p.morale)}" style="width:${p.morale}%"></div></div>
-        </td>
-        ${p.injuryType ? `<td class="text-red text-sm">${p.injuryType}</td>` : '<td></td>'}
-      </tr>
-    `).join('');
-
-    container.innerHTML = `
-      <div class="page-header flex-between">
-        <div>
-          <h1 class="page-title">Squad</h1>
-          <p class="page-subtitle">${data.players.length} players</p>
-        </div>
-      </div>
-
-      <div class="filter-bar">
-        <select onchange="filterSquad(this.value)">${posOptions}</select>
-      </div>
-
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              ${sortHeader('ovr', 'OVR')}
-              ${sortHeader('position', 'POS')}
-              ${sortHeader('value', 'Name')}
-              ${sortHeader('age', 'Age')}
-              ${sortHeader('value', 'Value')}
-              ${sortHeader('salary', 'Salary')}
-              ${sortHeader('fitness', 'Fitness')}
-              ${sortHeader('morale', 'Morale')}
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    `;
-  } catch (e) {
-    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
-  }
-}
-
-function sortSquad(col) {
-  if (squadSort.col === col) {
-    squadSort.order = squadSort.order === 'desc' ? 'asc' : 'desc';
-  } else {
-    squadSort.col = col;
-    squadSort.order = 'desc';
-  }
-  renderSquad(document.getElementById('main-content'));
-}
-
-function filterSquad(pos) {
-  squadFilter = pos;
-  renderSquad(document.getElementById('main-content'));
-}
-
-async function showPlayerDetail(playerId) {
-  try {
-    const data = await api.get(`/squad/${playerId}`);
-    const p = data.player;
-
-    const attrs = [
-      { label: 'Pace', value: p.pace },
-      { label: 'Shooting', value: p.shooting },
-      { label: 'Passing', value: p.passing },
-      { label: 'Defending', value: p.defending },
-      { label: 'Physical', value: p.physical },
-      { label: 'Goalkeeping', value: p.goalkeeping },
-    ];
-
-    const attrHtml = attrs.map(a => `
-      <div class="attr-row">
-        <span class="attr-label">${a.label}</span>
-        <span class="attr-value" style="color:${a.value >= 75 ? 'var(--green-bright)' : a.value >= 55 ? 'var(--gold)' : 'var(--red)'}">${a.value}</span>
-      </div>
-    `).join('');
-
-    openModal('Player Profile', `
-      <div class="player-detail-header">
-        <img class="player-avatar-lg" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
-        <div class="player-detail-ovr ${ovrClass(p.ovr)}" style="padding:8px 12px;border-radius:8px;background:var(--bg-input)">${p.ovr}</div>
-        <div>
-          <div class="player-detail-name">${p.firstName} ${p.lastName}</div>
-          <div class="player-detail-info">
-            <span class="pos-badge pos-${p.position}">${p.position}</span>
-            &middot; Age ${p.age} &middot; Potential ${p.potential}
-          </div>
-        </div>
-      </div>
-      <div class="player-attrs">${attrHtml}</div>
-      <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div class="attr-row"><span class="attr-label">Value</span><span class="attr-value text-gold">${formatMoney(p.value)}</span></div>
-        <div class="attr-row"><span class="attr-label">Salary</span><span class="attr-value">${formatMoney(p.salary)}/w</span></div>
-        <div class="attr-row"><span class="attr-label">Fitness</span><span class="attr-value">${p.fitness}%</span></div>
-        <div class="attr-row"><span class="attr-label">Morale</span><span class="attr-value">${p.morale}%</span></div>
-      </div>
-      <div style="margin-top:16px;text-align:right">
-        <button class="btn btn-danger btn-sm" onclick="sellPlayer(${p.id}, '${p.firstName} ${p.lastName}')">List for Sale</button>
-      </div>
-    `);
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-async function sellPlayer(playerId, name) {
-  if (!confirm(`List ${name} for sale?`)) return;
-  try {
-    const data = await api.post(`/transfers/sell/${playerId}`);
-    showToast(data.message);
-    closeModal();
-    renderSquad(document.getElementById('main-content'));
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-// ─── Transfer Market ─────────────────────────────────────────────────────────
-let transferSort = { col: 'ovr', order: 'desc' };
-let transferFilter = '';
-
-async function renderTransfers(container) {
-  try {
-    const params = new URLSearchParams({ sort: transferSort.col, order: transferSort.order });
-    if (transferFilter) params.set('position', transferFilter);
-    const data = await api.get(`/transfers/market?${params}`);
-
-    const positions = ['', 'GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST'];
-    const posOptions = positions.map(p => `<option value="${p}" ${transferFilter === p ? 'selected' : ''}>${p || 'All Positions'}</option>`).join('');
-
-    const rows = data.players.map(p => `
-      <tr>
-        <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
-        <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary);font-weight:500">
-          <div class="player-row-name">
-            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
-            ${p.firstName} ${p.lastName}
-          </div>
-        </td>
-        <td>${p.age}</td>
-        <td>${p.potential}</td>
-        <td class="money">${formatMoney(p.askingPrice)}</td>
-        <td>${formatMoney(p.value)}</td>
-        <td>
-          <button class="btn btn-primary btn-xs" onclick="buyPlayer(${p.id}, '${p.firstName} ${p.lastName}', ${p.askingPrice})"
-            ${p.askingPrice > data.budget ? 'disabled title="Insufficient budget"' : ''}>
-            Sign
-          </button>
-        </td>
-      </tr>
-    `).join('');
-
-    container.innerHTML = `
-      <div class="page-header">
-        <h1 class="page-title">Transfer Market</h1>
-        <p class="page-subtitle">${data.players.length} players available &middot; Budget: <span class="money">${formatMoney(data.budget)}</span></p>
-      </div>
-
-      <div class="filter-bar">
-        <select onchange="filterTransfers(this.value)">${posOptions}</select>
-      </div>
-
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th onclick="sortTransfers('ovr')">OVR</th>
-              <th>POS</th>
-              <th>Name</th>
-              <th onclick="sortTransfers('age')">Age</th>
-              <th onclick="sortTransfers('potential')">Pot</th>
-              <th onclick="sortTransfers('askingPrice')">Price</th>
-              <th>Value</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    `;
-  } catch (e) {
-    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
-  }
-}
-
-function sortTransfers(col) {
-  if (transferSort.col === col) {
-    transferSort.order = transferSort.order === 'desc' ? 'asc' : 'desc';
-  } else {
-    transferSort.col = col;
-    transferSort.order = 'desc';
-  }
-  renderTransfers(document.getElementById('main-content'));
-}
-
-function filterTransfers(pos) {
-  transferFilter = pos;
-  renderTransfers(document.getElementById('main-content'));
-}
-
-async function buyPlayer(playerId, name, price) {
-  if (!confirm(`Sign ${name} for ${formatMoney(price)}?`)) return;
-  try {
-    const data = await api.post(`/transfers/buy/${playerId}`);
-    showToast(data.message);
-    // Refresh club data
-    const clubData = await api.get('/club');
-    state.club = clubData.club;
-    updateSidebar();
-    renderTransfers(document.getElementById('main-content'));
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-// ─── Training Page ───────────────────────────────────────────────────────────
-let trainingFocus = 'general';
-
-async function renderTraining(container) {
-  try {
-    const data = await api.get('/training');
-
-    const focusOptions = ['general', 'pace', 'shooting', 'passing', 'defending', 'physical'];
-    const focusBtns = focusOptions.map(f => `
-      <button class="focus-btn ${trainingFocus === f ? 'active' : ''}" onclick="setTrainingFocus('${f}')">
-        ${f.charAt(0).toUpperCase() + f.slice(1)}
-      </button>
-    `).join('');
-
-    const rows = data.players.map(p => `
-      <tr>
-        <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
-        <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary);font-weight:500">
-          <div class="player-row-name">
-            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
-            ${p.firstName} ${p.lastName}
-          </div>
-        </td>
-        <td>${p.age}</td>
-        <td class="text-muted">${p.potential}</td>
-        <td>
-          ${p.fitness}%
-          <div class="bar-container"><div class="bar-fill ${barColor(p.fitness)}" style="width:${p.fitness}%"></div></div>
-        </td>
-        <td>
-          <button class="btn btn-primary btn-xs" onclick="trainPlayer(${p.id}, '${p.firstName} ${p.lastName}')"
-            ${p.fitness < 30 ? 'disabled' : ''}>
-            Train
-          </button>
-        </td>
-      </tr>
-    `).join('');
-
-    container.innerHTML = `
-      <div class="page-header flex-between">
-        <div>
-          <h1 class="page-title">Training</h1>
-          <p class="page-subtitle">${data.players.length} players &middot; Focus: ${trainingFocus}</p>
-        </div>
-        <button class="btn btn-gold" onclick="trainBatch()">Train All ($${(data.players.filter(p => p.fitness >= 30).length * 10000).toLocaleString()})</button>
-      </div>
-
-      <div class="training-controls">${focusBtns}</div>
-
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>OVR</th>
-              <th>POS</th>
-              <th>Name</th>
-              <th>Age</th>
-              <th>Pot</th>
-              <th>Fitness</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    `;
-  } catch (e) {
-    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
-  }
-}
-
-function setTrainingFocus(focus) {
-  trainingFocus = focus;
-  renderTraining(document.getElementById('main-content'));
-}
-
-async function trainPlayer(playerId, name) {
-  try {
-    const data = await api.post(`/training/${playerId}`, { focus: trainingFocus });
-    const improvements = Object.entries(data.improvements || {}).map(([k, v]) => `${k} +${v - data.player[k]}`).join(', ');
-    showToast(`${name} trained! ${improvements || 'No improvement this time'}`);
-    renderTraining(document.getElementById('main-content'));
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-async function trainBatch() {
-  if (!confirm(`Train entire squad with focus: ${trainingFocus}?`)) return;
-  try {
-    const data = await api.post('/training/batch', { focus: trainingFocus });
-    showToast(data.message);
-    renderTraining(document.getElementById('main-content'));
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-// ─── Tactics Page ────────────────────────────────────────────────────────────
+// ─── Formations ──────────────────────────────────────────────────────────────
 const FORMATIONS = {
   '4-4-2': [
     {role:'GK',x:50,y:90},{role:'LB',x:15,y:72},{role:'CB',x:37,y:76},{role:'CB',x:63,y:76},{role:'RB',x:85,y:72},
@@ -731,7 +633,8 @@ const FORMATIONS = {
     {role:'ST',x:50,y:16}
   ],
   '5-3-2': [
-    {role:'GK',x:50,y:90},{role:'LWB',x:10,y:68},{role:'CB',x:30,y:78},{role:'CB',x:50,y:80},{role:'CB',x:70,y:78},{role:'RWB',x:90,y:68},
+    {role:'GK',x:50,y:90},{role:'CB',x:30,y:78},{role:'CB',x:50,y:80},{role:'CB',x:70,y:78},
+    {role:'LWB',x:10,y:68},{role:'RWB',x:90,y:68},
     {role:'CM',x:30,y:50},{role:'CM',x:50,y:52},{role:'CM',x:70,y:50},
     {role:'ST',x:37,y:18},{role:'ST',x:63,y:18}
   ],
@@ -748,23 +651,11 @@ const FORMATIONS = {
   ],
 };
 
-let tacticsState = {
-  formation: '4-4-2',
-  mentality: 'balanced',
-  pressing: 'normal',
-  tempo: 'normal',
-  passingStyle: 'mixed',
-  captainId: null,
-  lineup: {},
-  players: [],
-  selectedSlot: null,
-};
-
-async function renderTactics(container) {
+async function renderFormation(container) {
   try {
     const data = await api.get('/tactics');
     const t = data.tactics;
-    tacticsState = {
+    state.tacticsState = {
       formation: t.formation || '4-4-2',
       mentality: t.mentality || 'balanced',
       pressing: t.pressing || 'normal',
@@ -775,26 +666,26 @@ async function renderTactics(container) {
       players: data.players,
       selectedSlot: null,
     };
-    drawTacticsPage(container);
+    drawFormation(container);
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
   }
 }
 
-function drawTacticsPage(container) {
-  const slots = FORMATIONS[tacticsState.formation];
-  const assignedIds = Object.values(tacticsState.lineup);
-  const unassigned = tacticsState.players.filter(p => !assignedIds.includes(p.id));
+function drawFormation(container) {
+  const ts = state.tacticsState;
+  const slots = FORMATIONS[ts.formation];
+  const assignedIds = Object.values(ts.lineup);
+  const unassigned = ts.players.filter(p => !assignedIds.includes(p.id));
 
   const formationBtns = Object.keys(FORMATIONS).map(f =>
-    `<button class="formation-btn ${tacticsState.formation === f ? 'active' : ''}" onclick="selectFormation('${f}')">${f}</button>`
+    `<button class="formation-btn ${ts.formation === f ? 'active' : ''}" onclick="selectFormation('${f}')">${f}</button>`
   ).join('');
 
   const pitchSlots = slots.map((slot, i) => {
-    const playerId = tacticsState.lineup[i];
-    const player = tacticsState.players.find(p => p.id === playerId);
-    const isSelected = tacticsState.selectedSlot === i;
-    const isCaptain = player && player.id === tacticsState.captainId;
+    const playerId = ts.lineup[i];
+    const player = ts.players.find(p => p.id === playerId);
+    const isSelected = ts.selectedSlot === i;
     return `
       <div class="pitch-player ${isSelected ? 'selected' : ''} ${player ? 'filled' : 'empty'}"
            style="left:${slot.x}%;top:${slot.y}%"
@@ -803,117 +694,75 @@ function drawTacticsPage(container) {
           ${player ? `<img class="pitch-player-avatar" src="${playerAvatarUrl(player)}" alt="">` : `<span class="pitch-player-plus">+</span>`}
         </div>
         <div class="pitch-player-name">
-          ${player ? `${player.lastName}${isCaptain ? ' &#169;' : ''}` : slot.role}
+          ${player ? player.lastName : slot.role}
         </div>
         <div class="pitch-player-role">${slot.role}</div>
       </div>
     `;
   }).join('');
 
-  const mentalityBtns = ['defensive','counter','balanced','attacking','all-out'].map(m =>
-    `<button class="tactic-opt ${tacticsState.mentality === m ? 'active' : ''}" onclick="setTacticOpt('mentality','${m}')">${m.replace('-',' ')}</button>`
-  ).join('');
-
-  const pressingBtns = ['low','normal','high','gegenpress'].map(p =>
-    `<button class="tactic-opt ${tacticsState.pressing === p ? 'active' : ''}" onclick="setTacticOpt('pressing','${p}')">${p === 'gegenpress' ? 'Gegenpress' : p}</button>`
-  ).join('');
-
-  const tempoBtns = ['slow','normal','fast','relentless'].map(t =>
-    `<button class="tactic-opt ${tacticsState.tempo === t ? 'active' : ''}" onclick="setTacticOpt('tempo','${t}')">${t}</button>`
-  ).join('');
-
-  const passingBtns = ['short','mixed','long','direct'].map(p =>
-    `<button class="tactic-opt ${tacticsState.passingStyle === p ? 'active' : ''}" onclick="setTacticOpt('passingStyle','${p}')">${p}</button>`
-  ).join('');
-
-  const benchHtml = unassigned.slice(0, 12).map(p => `
-    <div class="bench-player" onclick="showPlayerProfile('${p.id}')">
-      <span class="pos-badge pos-${p.position}">${p.position}</span>
-      <span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span>
-      <span class="bench-player-name">${p.firstName} ${p.lastName}</span>
+  const benchHtml = unassigned.slice(0, 8).map(p => `
+    <div class="player-card" style="padding:8px;margin-bottom:4px" onclick="showPlayerDetail(${p.id})">
+      <img class="player-card-avatar" style="width:32px;height:32px" src="${playerAvatarUrl(p)}" alt="">
+      <div class="player-card-info">
+        <div class="player-card-name" style="font-size:12px">${p.firstName} ${p.lastName}</div>
+        <div class="player-card-meta">
+          <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+        </div>
+      </div>
+      <span class="ovr-badge ${ovrClass(p.ovr)}" style="width:30px;height:24px;font-size:11px">${p.ovr}</span>
     </div>
   `).join('');
 
   container.innerHTML = `
-    <div class="page-header">
-      <h1 class="page-title">Tactics</h1>
-      <p class="page-subtitle">Set your formation, lineup, and game plan</p>
+    <div class="section-header">
+      <div>
+        <div class="section-title">Formation</div>
+        <div class="section-subtitle">${ts.formation} &middot; ${Object.keys(ts.lineup).length}/11 set</div>
+      </div>
+      <div class="flex gap-8">
+        <button class="btn btn-ghost btn-sm" onclick="autoFillLineup()">Auto</button>
+        <button class="btn btn-primary btn-sm" onclick="saveTactics()">Save</button>
+      </div>
     </div>
 
-    <div class="tactics-layout">
-      <div class="tactics-left">
-        <div class="card tactics-pitch-card">
-          <div class="card-header">
-            <span class="card-title">Formation</span>
-            <div class="flex gap-8">
-              <button class="btn btn-ghost btn-sm" onclick="autoFillLineup()">Auto XI</button>
-              <button class="btn btn-primary btn-sm" onclick="saveTactics()">Save</button>
-            </div>
-          </div>
-          <div class="formation-selector">${formationBtns}</div>
-          <div class="pitch-container">
-            <div class="pitch">
-              <div class="pitch-markings">
-                <div class="pitch-center-circle"></div>
-                <div class="pitch-center-line"></div>
-                <div class="pitch-box-top"></div>
-                <div class="pitch-box-bottom"></div>
-                <div class="pitch-goal-top"></div>
-                <div class="pitch-goal-bottom"></div>
-                <div class="pitch-corner-tl"></div>
-                <div class="pitch-corner-tr"></div>
-                <div class="pitch-corner-bl"></div>
-                <div class="pitch-corner-br"></div>
-              </div>
-              ${pitchSlots}
-            </div>
-          </div>
+    <div class="formation-selector mb-12">${formationBtns}</div>
+
+    <div class="pitch-wrapper">
+      <div class="pitch">
+        <div class="pitch-markings">
+          <div class="pitch-center-circle"></div>
+          <div class="pitch-center-line"></div>
+          <div class="pitch-box-top"></div>
+          <div class="pitch-box-bottom"></div>
+          <div class="pitch-goal-top"></div>
+          <div class="pitch-goal-bottom"></div>
         </div>
+        ${pitchSlots}
       </div>
+    </div>
 
-      <div class="tactics-right">
-        ${tacticsState.selectedSlot !== null ? renderSlotPicker() : ''}
+    ${ts.selectedSlot !== null ? renderSlotPicker() : ''}
 
-        <div class="card">
-          <div class="card-header"><span class="card-title">Mentality</span></div>
-          <div class="tactic-options">${mentalityBtns}</div>
-        </div>
-
-        <div class="card">
-          <div class="card-header"><span class="card-title">Pressing</span></div>
-          <div class="tactic-options">${pressingBtns}</div>
-        </div>
-
-        <div class="card">
-          <div class="card-header"><span class="card-title">Tempo</span></div>
-          <div class="tactic-options">${tempoBtns}</div>
-        </div>
-
-        <div class="card">
-          <div class="card-header"><span class="card-title">Passing Style</span></div>
-          <div class="tactic-options">${passingBtns}</div>
-        </div>
-
-        <div class="card">
-          <div class="card-header"><span class="card-title">Substitutes</span><span class="card-subtitle">${unassigned.length} available</span></div>
-          <div class="bench-list">${benchHtml || '<p class="text-muted text-sm">All players assigned</p>'}</div>
-        </div>
+    <div class="card mt-12">
+      <div class="card-header">
+        <span class="card-title">Substitutes</span>
+        <span class="card-subtitle">${unassigned.length} available</span>
       </div>
+      ${benchHtml || '<p class="text-muted text-sm">All players assigned</p>'}
     </div>
   `;
 }
 
 function renderSlotPicker() {
-  const slot = FORMATIONS[tacticsState.formation][tacticsState.selectedSlot];
-  const assignedIds = Object.values(tacticsState.lineup);
-  const currentId = tacticsState.lineup[tacticsState.selectedSlot];
+  const ts = state.tacticsState;
+  const slot = FORMATIONS[ts.formation][ts.selectedSlot];
+  const assignedIds = Object.values(ts.lineup);
+  const currentId = ts.lineup[ts.selectedSlot];
 
-  const candidates = tacticsState.players
+  const candidates = ts.players
     .filter(p => p.id !== currentId || !currentId)
-    .filter(p => {
-      if (p.id && assignedIds.includes(p.id)) return false;
-      return true;
-    })
+    .filter(p => !assignedIds.includes(p.id) || p.id === currentId)
     .sort((a, b) => {
       const aMatch = a.position === slot.role ? 0 : 1;
       const bMatch = b.position === slot.role ? 0 : 1;
@@ -921,83 +770,64 @@ function renderSlotPicker() {
       return b.ovr - a.ovr;
     });
 
-  const rows = candidates.slice(0, 15).map(p => {
-    const posMatch = p.position === slot.role;
-    return `
-      <div class="slot-picker-player ${posMatch ? 'pos-match' : ''}" onclick="assignPlayerToSlot('${p.id}')">
-        <span class="pos-badge pos-${p.position}">${p.position}</span>
-        <span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span>
-        <span class="slot-picker-name">${p.firstName} ${p.lastName}</span>
-        ${p.id === tacticsState.captainId ? '<span class="captain-badge-cp">&#169;</span>' : ''}
+  const rows = candidates.slice(0, 10).map(p => `
+    <div class="player-card" style="padding:8px;margin-bottom:4px" onclick="assignPlayerToSlot('${p.id}')">
+      <img class="player-card-avatar" style="width:32px;height:32px" src="${playerAvatarUrl(p)}" alt="">
+      <div class="player-card-info">
+        <div class="player-card-name" style="font-size:12px">${p.firstName} ${p.lastName}</div>
+        <div class="player-card-meta">
+          <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+        </div>
       </div>
-    `;
-  }).join('');
-
-  const currentPlayer = tacticsState.players.find(p => p.id === currentId);
+      <span class="ovr-badge ${ovrClass(p.ovr)}" style="width:30px;height:24px;font-size:11px">${p.ovr}</span>
+    </div>
+  `).join('');
 
   return `
-    <div class="card slot-picker-card">
+    <div class="card mt-12" style="border-color:var(--gold-dim)">
       <div class="card-header">
         <span class="card-title">Assign ${slot.role}</span>
-        <button class="btn btn-ghost btn-xs" onclick="clearSlot()">&times; Clear</button>
+        <button class="btn btn-ghost btn-xs" onclick="clearSlot()">Clear</button>
       </div>
-      ${currentPlayer ? `
-        <div class="slot-current">
-          Current: <strong>${currentPlayer.firstName} ${currentPlayer.lastName}</strong>
-          <span class="pos-badge pos-${currentPlayer.position}">${currentPlayer.position}</span>
-          <span class="ovr-badge ${ovrClass(currentPlayer.ovr)}">${currentPlayer.ovr}</span>
-          <button class="btn btn-ghost btn-xs" onclick="setCaptain('${currentPlayer.id}')" style="margin-left:8px">&#169; Captain</button>
-        </div>
-      ` : ''}
-      <div class="slot-picker-list">${rows}</div>
+      ${rows}
     </div>
   `;
 }
 
 function selectFormation(f) {
-  tacticsState.formation = f;
-  tacticsState.lineup = {};
-  tacticsState.selectedSlot = null;
-  drawTacticsPage(document.getElementById('main-content'));
+  state.tacticsState.formation = f;
+  state.tacticsState.lineup = {};
+  state.tacticsState.selectedSlot = null;
+  drawFormation(document.getElementById('main-content'));
 }
 
 function selectSlot(i) {
-  tacticsState.selectedSlot = tacticsState.selectedSlot === i ? null : i;
-  drawTacticsPage(document.getElementById('main-content'));
+  state.tacticsState.selectedSlot = state.tacticsState.selectedSlot === i ? null : i;
+  drawFormation(document.getElementById('main-content'));
 }
 
 function clearSlot() {
-  delete tacticsState.lineup[tacticsState.selectedSlot];
-  tacticsState.selectedSlot = null;
-  drawTacticsPage(document.getElementById('main-content'));
+  delete state.tacticsState.lineup[state.tacticsState.selectedSlot];
+  state.tacticsState.selectedSlot = null;
+  drawFormation(document.getElementById('main-content'));
 }
 
 function assignPlayerToSlot(playerId) {
-  const prevSlot = Object.entries(tacticsState.lineup).find(([k, v]) => v === playerId);
-  if (prevSlot) delete tacticsState.lineup[prevSlot[0]];
-  tacticsState.lineup[tacticsState.selectedSlot] = playerId;
-  tacticsState.selectedSlot = null;
-  drawTacticsPage(document.getElementById('main-content'));
-}
-
-function setCaptain(playerId) {
-  tacticsState.captainId = tacticsState.captainId === playerId ? null : playerId;
-  drawTacticsPage(document.getElementById('main-content'));
-}
-
-function setTacticOpt(key, value) {
-  tacticsState[key] = value;
-  drawTacticsPage(document.getElementById('main-content'));
+  const prevSlot = Object.entries(state.tacticsState.lineup).find(([k, v]) => v === playerId);
+  if (prevSlot) delete state.tacticsState.lineup[prevSlot[0]];
+  state.tacticsState.lineup[state.tacticsState.selectedSlot] = playerId;
+  state.tacticsState.selectedSlot = null;
+  drawFormation(document.getElementById('main-content'));
 }
 
 function autoFillLineup() {
-  const slots = FORMATIONS[tacticsState.formation];
+  const ts = state.tacticsState;
+  const slots = FORMATIONS[ts.formation];
   const lineup = {};
   const used = new Set();
-
   for (let i = 0; i < slots.length; i++) {
     const slot = slots[i];
-    const candidates = tacticsState.players
+    const candidates = ts.players
       .filter(p => !used.has(p.id))
       .sort((a, b) => {
         const aMatch = a.position === slot.role ? 0 : 1;
@@ -1010,21 +840,21 @@ function autoFillLineup() {
       used.add(candidates[0].id);
     }
   }
-  tacticsState.lineup = lineup;
-  tacticsState.selectedSlot = null;
-  drawTacticsPage(document.getElementById('main-content'));
+  ts.lineup = lineup;
+  ts.selectedSlot = null;
+  drawFormation(document.getElementById('main-content'));
 }
 
 async function saveTactics() {
   try {
     await api.post('/tactics', {
-      formation: tacticsState.formation,
-      mentality: tacticsState.mentality,
-      pressing: tacticsState.pressing,
-      tempo: tacticsState.tempo,
-      passingStyle: tacticsState.passingStyle,
-      captainId: tacticsState.captainId,
-      lineup: tacticsState.lineup,
+      formation: state.tacticsState.formation,
+      mentality: state.tacticsState.mentality,
+      pressing: state.tacticsState.pressing,
+      tempo: state.tacticsState.tempo,
+      passingStyle: state.tacticsState.passingStyle,
+      captainId: state.tacticsState.captainId,
+      lineup: state.tacticsState.lineup,
     });
     showToast('Tactics saved!');
   } catch (e) {
@@ -1032,479 +862,60 @@ async function saveTactics() {
   }
 }
 
-// ─── Matches Page ────────────────────────────────────────────────────────────
-async function renderMatches(container) {
+async function renderSquadList(container) {
   try {
-    const data = await api.get('/matches/current');
+    const params = new URLSearchParams({ sort: state.squadSort.col, order: state.squadSort.order });
+    if (state.squadFilter) params.set('position', state.squadFilter);
+    const data = await api.get(`/squad?${params}`);
 
-    let matchListHtml = '';
-    if (data.matches && data.matches.length > 0) {
-      matchListHtml = data.matches.map(m => {
-        const isUser = m.homeTeamId === state.club?.id || m.awayTeamId === state.club?.id;
-        const clickable = m.simulated ? `onclick="showMatchReport(${m.id})" style="cursor:pointer"` : '';
-        return `
-          <div class="match-list-item" ${clickable} style="${isUser ? 'background:rgba(26,122,90,0.08)' : ''}">
-            <span class="match-list-team">${m.homeName}</span>
-            <span class="match-list-score ${m.simulated ? '' : 'pending'}">
-              ${m.simulated ? `${m.homeGoals} - ${m.awayGoals}` : 'vs'}
-            </span>
-            <span class="match-list-team">${m.awayName}</span>
-            ${m.simulated ? '<span class="text-muted text-sm">Report &rarr;</span>' : ''}
-          </div>
-        `;
-      }).join('');
-    }
-
-    let userMatchHtml = '';
-    if (data.userMatch && data.userMatch.simulated) {
-      const events = Array.isArray(data.userMatch.events) ? data.userMatch.events : (data.userMatch.events ? JSON.parse(data.userMatch.events) : []);
-      const eventsHtml = events.map(e => {
-        const isHome = e.team === 'home';
-        const teamName = isHome ? data.userMatch.homeShort : data.userMatch.awayShort;
-        const isYou = (isHome && data.userMatch.homeTeamId === state.club?.id) || (!isHome && data.userMatch.awayTeamId === state.club?.id);
-        return `
-          <div class="match-event">
-            <span class="minute">${e.minute}'</span>
-            &#9917; ${e.player} (${isYou ? 'You' : teamName})
-          </div>
-        `;
-      }).join('');
-
-      userMatchHtml = `
-        <div class="card mt-16">
-          <div class="card-header"><span class="card-title">Match Events</span></div>
-          <div class="match-events">${eventsHtml || '<p class="text-muted">No goals</p>'}</div>
-        </div>
-      `;
-    }
-
-    const allSimulated = data.matches?.every(m => m.simulated);
-    const anyUnsimulated = data.matches?.some(m => !m.simulated);
+    const positions = ['', 'GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST'];
+    const posOptions = positions.map(p => `<option value="${p}" ${state.squadFilter === p ? 'selected' : ''}>${p || 'All Positions'}</option>`).join('');
 
     container.innerHTML = `
-      <div class="page-header">
-        <h1 class="page-title">Matches</h1>
-        <p class="page-subtitle">Matchday ${data.matchday} &middot; Season ${data.status}</p>
-      </div>
-
-      <div class="card mb-24">
-        <div class="card-header">
-          <span class="card-title">Matchday ${data.matchday} Fixtures</span>
-          <div class="flex gap-8">
-            ${anyUnsimulated ? `<button class="btn btn-primary" onclick="simulateMatch()">Simulate Matchday</button>` : ''}
-            ${allSimulated ? `<button class="btn btn-gold" onclick="advanceMatchday()">Advance to Next Matchday</button>` : ''}
-          </div>
-        </div>
-        ${matchListHtml || '<div class="empty-state"><p>No fixtures</p></div>'}
-      </div>
-
-      ${userMatchHtml}
-
-      <div class="card mt-16">
-        <div class="card-header">
-          <span class="card-title">Recent Results</span>
-          <a href="#/matches" class="btn btn-ghost btn-sm" onclick="loadHistory()">View All</a>
-        </div>
-        <div id="match-history"></div>
-      </div>
-    `;
-
-    // Load recent history
-    loadHistory();
-  } catch (e) {
-    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
-  }
-}
-
-async function loadHistory() {
-  try {
-    const data = await api.get('/matches/history');
-    const historyEl = document.getElementById('match-history');
-    if (!historyEl) return;
-
-    if (data.matches.length === 0) {
-      historyEl.innerHTML = '<div class="empty-state"><p>No matches played yet</p></div>';
-      return;
-    }
-
-    historyEl.innerHTML = data.matches.slice(0, 10).map(m => {
-      const isHome = m.homeTeamId === state.club?.id;
-      const userGoals = isHome ? m.homeGoals : m.awayGoals;
-      const oppGoals = isHome ? m.awayGoals : m.homeGoals;
-      const result = userGoals > oppGoals ? 'W' : userGoals < oppGoals ? 'L' : 'D';
-
-      return `
-        <div class="match-list-item" onclick="showMatchReport(${m.id})" style="cursor:pointer">
-          <span class="text-muted text-sm" style="min-width:30px">MD${m.matchday}</span>
-          <span class="match-list-team">${m.homeName}</span>
-          <span class="match-list-score">${m.homeGoals} - ${m.awayGoals}</span>
-          <span class="match-list-team">${m.awayName}</span>
-          <span class="result-badge result-${result}">${result}</span>
-        </div>
-      `;
-    }).join('');
-  } catch (e) { /* silent */ }
-}
-
-async function simulateMatch() {
-  try {
-    // Get current match data first
-    const currentData = await api.get('/matches/current');
-    const userMatch = currentData.matches?.find(m =>
-      m.homeTeamId === state.club?.id || m.awayTeamId === state.club?.id
-    );
-
-    if (!userMatch) {
-      showToast('No match to simulate', 'error');
-      return;
-    }
-
-    const isHome = userMatch.homeTeamId === state.club?.id;
-
-    // Open match viewer
-    openMatchViewer({
-      homeName: userMatch.homeName || 'Home',
-      awayName: userMatch.awayName || 'Away',
-      homeFormation: '4-4-2',
-      awayFormation: '4-4-2',
-    });
-
-    // Simulate on server
-    const data = await api.post('/matches/simulate');
-
-    // Get match events for viewer
-    if (data.userResult && data.userResult.matchId) {
-      try {
-        const report = await api.get(`/matches/report/${data.userResult.matchId}`);
-        feedMatchEvents({
-          events: report.events || [],
-          homeName: userMatch.homeName || 'Home',
-          awayName: userMatch.awayName || 'Away',
-        });
-      } catch (e) {
-        console.error('Failed to load match report:', e);
-      }
-    }
-
-    // Show result toast
-    if (data.userResult) {
-      const r = data.userResult;
-      const userGoals = r.isHome ? r.homeGoals : r.awayGoals;
-      const oppGoals = r.isHome ? r.awayGoals : r.homeGoals;
-      const result = userGoals > oppGoals ? 'Victory!' : userGoals < oppGoals ? 'Defeat' : 'Draw';
-      setTimeout(() => {
-        showToast(`${result} ${userGoals} - ${oppGoals}`, userGoals >= oppGoals ? 'success' : 'error');
-      }, 2000);
-    }
-
-    // Refresh matches page when viewer closes
-    matchViewerCloseCallback = () => {
-      renderMatches(document.getElementById('main-content'));
-    };
-
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-// ─── Match Viewer Integration ──────────────────────────────────────────────
-let matchViewerCloseCallback = null;
-
-function openMatchViewer(matchInfo) {
-  const overlay = document.getElementById('match-viewer-overlay');
-  overlay.style.display = 'flex';
-
-  // Set team names
-  document.getElementById('mv-home-name').textContent = matchInfo.homeName;
-  document.getElementById('mv-away-name').textContent = matchInfo.awayName;
-
-  // Set team badges (colored circles)
-  const homeBadge = document.getElementById('mv-home-badge');
-  const awayBadge = document.getElementById('mv-away-badge');
-  homeBadge.style.background = 'linear-gradient(135deg, #22a06b, #1a7a5a)';
-  awayBadge.style.background = 'linear-gradient(135deg, #4a9eff, #2a6acc)';
-
-  // Reset score
-  document.getElementById('mv-home-score').textContent = '0';
-  document.getElementById('mv-away-score').textContent = '0';
-
-  // Clear commentary
-  document.getElementById('mv-commentary-list').innerHTML = '';
-
-  // Initialize the viewer
-  const canvas = document.getElementById('mv-canvas');
-  MatchViewer.init(canvas, {
-    events: [],
-    homeName: matchInfo.homeName,
-    awayName: matchInfo.awayName,
-  }, matchInfo.homeFormation, matchInfo.awayFormation);
-
-  MatchViewer.start();
-}
-
-function feedMatchEvents(matchData) {
-  // Re-init with actual events
-  const mvState = MatchViewer.getState();
-  if (!mvState) return;
-
-  const canvas = document.getElementById('mv-canvas');
-  MatchViewer.stop();
-
-  MatchViewer.init(canvas, matchData, mvState.homeForm, mvState.awayForm);
-  MatchViewer.start();
-}
-
-function closeMatchViewer() {
-  MatchViewer.stop();
-  document.getElementById('match-viewer-overlay').style.display = 'none';
-  if (matchViewerCloseCallback) {
-    matchViewerCloseCallback();
-    matchViewerCloseCallback = null;
-  }
-}
-
-function mvTogglePause() {
-  const paused = MatchViewer.togglePause();
-  const btn = document.getElementById('mv-pause-btn');
-  btn.innerHTML = paused ? '&#9654; Play' : '&#9646;&#9646; Pause';
-}
-
-function mvSetSpeed(speed) {
-  MatchViewer.setSpeed(speed);
-  document.querySelectorAll('.mv-speed').forEach(btn => {
-    btn.classList.toggle('active', parseInt(btn.dataset.speed) === speed);
-  });
-}
-
-async function advanceMatchday() {
-  try {
-    const data = await api.post('/matches/advance');
-    if (data.finished) {
-      showToast('Season finished! Check the league table for final standings.', 'info');
-    } else {
-      showToast(`Advanced to matchday ${data.matchday}`);
-    }
-    const clubData = await api.get('/club');
-    state.club = clubData.club;
-    updateSidebar();
-    renderMatches(document.getElementById('main-content'));
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-// ─── League Page ─────────────────────────────────────────────────────────────
-async function renderLeague(container) {
-  try {
-    const data = await api.get('/league');
-
-    const rows = data.standings.map(s => {
-      const isUser = s.clubId === state.club?.id;
-      const isRelegation = s.position > 17;
-      return `
-        <tr class="${isUser ? 'highlight' : ''} ${isRelegation ? 'relegation' : ''}">
-          <td>${s.position}</td>
-          <td style="color:var(--text-primary);font-weight:${isUser ? '700' : '500'};cursor:pointer" onclick="showClubProfile('${s.clubId}')">${s.name}</td>
-          <td>${s.played}</td>
-          <td>${s.won}</td>
-          <td>${s.drawn}</td>
-          <td>${s.lost}</td>
-          <td>${s.goalsFor}</td>
-          <td>${s.goalsAgainst}</td>
-          <td>${s.goalDifference > 0 ? '+' : ''}${s.goalDifference}</td>
-          <td style="font-weight:800;color:var(--gold)">${s.points}</td>
-        </tr>
-      `;
-    }).join('');
-
-    container.innerHTML = `
-      <div class="page-header">
-        <h1 class="page-title">League Table</h1>
-        <p class="page-subtitle">Matchday ${data.season.currentMatchday} of ${data.season.totalMatchdays} &middot; ${data.season.status}</p>
-      </div>
-
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Club</th>
-              <th>P</th>
-              <th>W</th>
-              <th>D</th>
-              <th>L</th>
-              <th>GF</th>
-              <th>GA</th>
-              <th>GD</th>
-              <th>Pts</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-
-      <div class="flex gap-16 mt-16 text-sm text-muted">
-        <span><span style="display:inline-block;width:12px;height:12px;background:rgba(26,122,90,0.3);border-radius:2px;vertical-align:middle;margin-right:4px"></span> Your club</span>
-        <span><span style="display:inline-block;width:12px;height:12px;background:rgba(224,85,85,0.2);border-radius:2px;vertical-align:middle;margin-right:4px"></span> Relegation zone</span>
-      </div>
-    `;
-  } catch (e) {
-    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
-  }
-}
-
-// ─── Finances Page ───────────────────────────────────────────────────────────
-async function renderFinances(container) {
-  try {
-    const data = await api.get('/finances');
-
-    const wageRows = data.players.slice(0, 15).map(p => `
-      <tr>
-        <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary)">
-          <div class="player-row-name">
-            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
-            ${p.firstName} ${p.lastName}
-          </div>
-        </td>
-        <td>${p.age}</td>
-        <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
-        <td class="money">${formatMoney(p.salary)}/w</td>
-        <td>${formatMoney(p.value)}</td>
-      </tr>
-    `).join('');
-
-    const transferRows = data.recentTransfers.slice(0, 10).map(t => `
-      <tr>
-        <td>MD${t.matchday}</td>
-        <td style="color:var(--text-primary)">
-          <div class="player-row-name">
-            <img class="player-avatar" src="${playerAvatarUrl(t)}" alt="" loading="lazy">
-            ${t.firstName} ${t.lastName}
-          </div>
-        </td>
-        <td>${t.toClubId === state.club?.id ? '<span class="text-green">In</span>' : '<span class="text-red">Out</span>'}</td>
-        <td class="money">${formatMoney(t.fee)}</td>
-      </tr>
-    `).join('');
-
-    container.innerHTML = `
-      <div class="page-header">
-        <h1 class="page-title">Finances</h1>
-        <p class="page-subtitle">Club financial overview</p>
-      </div>
-
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-label">Balance</div>
-          <div class="stat-value gold">${formatMoney(data.club.balance)}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Transfer Budget</div>
-          <div class="stat-value green">${formatMoney(data.club.transferBudget)}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Weekly Wages</div>
-          <div class="stat-value red">${formatMoney(data.totalWages)}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Squad Value</div>
-          <div class="stat-value">${formatMoney(data.totalValue)}</div>
+      <div class="section-header">
+        <div>
+          <div class="section-title">All Players</div>
+          <div class="section-subtitle">${data.players.length} players</div>
         </div>
       </div>
 
-      <div class="dashboard-grid">
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title">Wage Bill</span>
-            <span class="card-subtitle">Top earners</span>
-          </div>
-          <div class="table-container" style="border:none">
-            <table>
-              <thead><tr><th>POS</th><th>Name</th><th>Age</th><th>OVR</th><th>Salary</th><th>Value</th></tr></thead>
-              <tbody>${wageRows}</tbody>
-            </table>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title">Transfer History</span>
-          </div>
-          ${transferRows ? `
-            <div class="table-container" style="border:none">
-              <table>
-                <thead><tr><th>MD</th><th>Player</th><th>Dir</th><th>Fee</th></tr></thead>
-                <tbody>${transferRows}</tbody>
-              </table>
+      <div class="filter-bar">
+        <select onchange="filterSquad(this.value)">${posOptions}</select>
+      </div>
+
+      ${data.players.map(p => `
+        <div class="player-card" onclick="showPlayerDetail(${p.id})">
+          <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+          <div class="player-card-info">
+            <div class="player-card-name">${p.firstName} ${p.lastName}</div>
+            <div class="player-card-meta">
+              <span class="pos-badge pos-${p.position}">${p.position}</span>
+              <span class="player-card-age">Age ${p.age}</span>
+              <span style="font-size:11px">${p.fitness}%
+                <span class="bar-container"><span class="bar-fill ${barColor(p.fitness)}" style="width:${p.fitness}%"></span></span>
+              </span>
             </div>
-          ` : '<div class="empty-state"><p>No transfers yet</p></div>'}
-        </div>
-      </div>
-    `;
-  } catch (e) {
-    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
-  }
-}
-
-// ─── Leaderboards Page ───────────────────────────────────────────────────────
-async function renderLeaderboards(container) {
-  try {
-    const data = await api.get('/leaderboards');
-
-    const renderTable = (players, stat, label) => {
-      const rows = players.map((p, i) => `
-        <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
-          <td>${i + 1}</td>
-          <td style="color:var(--text-primary);font-weight:500">
-            <div class="player-row-name">
-              <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
-              ${p.firstName} ${p.lastName}
-            </div>
-          </td>
-          <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-          <td class="text-muted">${p.clubName}</td>
-          <td style="font-weight:700;color:var(--gold)">${p[stat]}</td>
-        </tr>
-      `).join('');
-
-      return `
-        <div class="card">
-          <div class="card-header"><span class="card-title">${label}</span></div>
-          <div class="table-container" style="border:none">
-            <table>
-              <thead><tr><th>#</th><th>Player</th><th>POS</th><th>Club</th><th>${label}</th></tr></thead>
-              <tbody>${rows || '<tr><td colspan="5" class="text-center text-muted">No data yet</td></tr>'}</tbody>
-            </table>
+          </div>
+          <div class="player-card-stats">
+            <span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span>
           </div>
         </div>
-      `;
-    };
-
-    container.innerHTML = `
-      <div class="page-header">
-        <h1 class="page-title">Leaderboards</h1>
-        <p class="page-subtitle">Season statistics and rankings</p>
-      </div>
-
-      <div class="dashboard-grid">
-        ${renderTable(data.topScorers, 'goals', 'Top Scorers')}
-        ${renderTable(data.topAssists, 'assists', 'Top Assists')}
-        ${renderTable(data.highestOvr, 'ovr', 'Highest Rated')}
-        ${renderTable(data.mostValuable, 'value', 'Most Valuable')}
-      </div>
+      `).join('')}
     `;
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
   }
 }
 
-// ─── Player Profile ──────────────────────────────────────────────────────────
-async function renderPlayerProfile(container) {
-  const playerId = location.hash.split('/')[2];
-  if (!playerId) { navigate('#/squad'); return; }
+function filterSquad(pos) {
+  state.squadFilter = pos;
+  renderSquadList(document.getElementById('main-content'));
+}
 
+// ─── Player Detail ───────────────────────────────────────────────────────────
+async function showPlayerDetail(playerId) {
   try {
-    const data = await api.get(`/players/${playerId}`);
+    const data = await api.get(`/squad/${playerId}`);
     const p = data.player;
 
     const attrs = [
@@ -1523,167 +934,217 @@ async function renderPlayerProfile(container) {
       </div>
     `).join('');
 
-    const seasonStats = `
-      <div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div class="stat-card">
-          <div class="stat-label">Appearances</div>
-          <div class="stat-value">${p.appearances}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Goals</div>
-          <div class="stat-value text-gold">${p.goals}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Assists</div>
-          <div class="stat-value text-green">${p.assists}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Cards</div>
-          <div class="stat-value">${p.yellowCards}Y ${p.redCards}R</div>
-        </div>
-      </div>
-    `;
-
-    let injuryHtml = '';
-    if (p.injuryType) {
-      injuryHtml = `
-        <div class="card mt-16" style="border-color:var(--red)">
-          <div class="card-header">
-            <span class="card-title text-red">Injured</span>
+    openModal('Player Profile', `
+      <div class="player-detail-header">
+        <img class="player-detail-avatar" src="${playerAvatarUrl(p)}" alt="">
+        <div>
+          <div class="player-detail-name">${p.firstName} ${p.lastName}</div>
+          <div class="player-detail-info">
+            <span class="pos-badge pos-${p.position}">${p.position}</span>
+            &middot; Age ${p.age} &middot; Pot ${p.potential}
           </div>
-          <p>${p.injuryType} - ${p.injuryWeeks} week${p.injuryWeeks !== 1 ? 's' : ''} remaining</p>
         </div>
-      `;
+        <div class="player-detail-ovr ${ovrClass(p.ovr)}">${p.ovr}</div>
+      </div>
+      <div class="player-attrs">${attrHtml}</div>
+      <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div class="attr-row"><span class="attr-label">Value</span><span class="attr-value text-gold">${formatMoney(p.value)}</span></div>
+        <div class="attr-row"><span class="attr-label">Salary</span><span class="attr-value">${formatMoney(p.salary)}/w</span></div>
+        <div class="attr-row"><span class="attr-label">Fitness</span><span class="attr-value">${p.fitness}%</span></div>
+        <div class="attr-row"><span class="attr-label">Morale</span><span class="attr-value">${p.morale}%</span></div>
+      </div>
+      <div style="margin-top:16px;text-align:right">
+        <button class="btn btn-danger btn-sm" onclick="sellPlayer(${p.id}, '${p.firstName} ${p.lastName}')">List for Sale</button>
+      </div>
+    `);
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function sellPlayer(playerId, name) {
+  if (!confirm(`List ${name} for sale?`)) return;
+  try {
+    const data = await api.post(`/transfers/sell/${playerId}`);
+    showToast(data.message);
+    closeModal();
+    // Refresh current view
+    const main = document.getElementById('main-content');
+    if (state.currentSection === 'squad') {
+      renderSquadSection(main);
     }
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+// ─── MATCHES SECTION ─────────────────────────────────────────────────────────
+async function renderMatchesSection(container) {
+  const tab = state.currentSubTab || 'next';
+  if (tab === 'next') return renderNextMatch(container);
+  if (tab === 'results') return renderMatchResults(container);
+  if (tab === 'league') return renderLeagueTable(container);
+}
+
+async function renderNextMatch(container) {
+  try {
+    const data = await api.get('/matches/current');
+
+    const userMatch = data.matches?.find(m => m.homeTeamId === state.club?.id || m.awayTeamId === state.club?.id);
+    const isHome = userMatch?.homeTeamId === state.club?.id;
+    const oppName = userMatch ? (isHome ? userMatch.awayName : userMatch.homeName) : '';
+
+    const otherMatches = data.matches?.filter(m =>
+      m.homeTeamId !== state.club?.id && m.awayTeamId !== state.club?.id
+    ) || [];
 
     container.innerHTML = `
-      <div class="page-header">
-        <a href="#/squad" class="btn btn-ghost btn-sm mb-16">&larr; Back to Squad</a>
+      <div class="section-header">
+        <div>
+          <div class="section-title">Match Center</div>
+          <div class="section-subtitle">Matchday ${data.matchday} &middot; ${data.status}</div>
+        </div>
       </div>
 
-      <div class="card">
-        <div class="player-detail-header">
-          <img class="player-avatar-lg" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
-          <div class="player-detail-ovr ${ovrClass(p.ovr)}" style="padding:12px 16px;border-radius:8px;background:var(--bg-input)">${p.ovr}</div>
-          <div>
-            <div class="player-detail-name">${p.firstName} ${p.lastName}</div>
-            <div class="player-detail-info">
-              <span class="pos-badge pos-${p.position}">${p.position}</span>
-              &middot; Age ${p.age} &middot; ${data.clubName}
+      ${userMatch ? `
+        <div class="next-match-card">
+          <div class="next-match-label">
+            <span class="live-dot"></span>
+            Your Match &middot; ${isHome ? 'Home' : 'Away'}
+          </div>
+          <div class="next-match-teams">
+            <div class="next-match-team">
+              <div class="next-match-team-badge" style="background:linear-gradient(135deg, var(--green), var(--green-light))">&#9917;</div>
+              <div class="next-match-team-name">${userMatch.homeName}</div>
             </div>
-            <div class="text-sm text-muted mt-8">Potential: ${p.potential}</div>
+            <div class="next-match-vs">VS</div>
+            <div class="next-match-team">
+              <div class="next-match-team-badge" style="background:linear-gradient(135deg, #4a9eff, #2a6acc)">&#9917;</div>
+              <div class="next-match-team-name">${userMatch.awayName}</div>
+            </div>
+          </div>
+          <div class="next-match-action">
+            ${!userMatch.simulated ? `
+              <button class="btn btn-primary" onclick="simulateMatch()">Play Match</button>
+            ` : `
+              <button class="btn btn-gold" onclick="showMatchReport(${userMatch.id})">View Report</button>
+            `}
           </div>
         </div>
+      ` : '<div class="empty-state"><p>No match scheduled</p></div>'}
 
-        ${seasonStats}
-
-        <div class="card-header mt-24"><span class="card-title">Attributes</span></div>
-        <div class="player-attrs">${attrHtml}</div>
-
-        <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div class="attr-row"><span class="attr-label">Value</span><span class="attr-value text-gold">${formatMoney(p.value)}</span></div>
-          <div class="attr-row"><span class="attr-label">Salary</span><span class="attr-value">${formatMoney(p.salary)}/w</span></div>
-          <div class="attr-row"><span class="attr-label">Fitness</span><span class="attr-value">${p.fitness}%</span></div>
-          <div class="attr-row"><span class="attr-label">Morale</span><span class="attr-value">${p.morale}%</span></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Other Fixtures</span>
         </div>
-
-        ${injuryHtml}
+        ${otherMatches.length > 0 ? otherMatches.map(m => `
+          <div class="match-card-result" ${m.simulated ? `onclick="showMatchReport(${m.id})"` : ''}>
+            <div class="match-result-team">
+              <span class="match-result-team-name">${m.homeName}</span>
+            </div>
+            <div class="match-result-score ${m.simulated ? '' : 'pending'}">
+              ${m.simulated ? `${m.homeGoals} - ${m.awayGoals}` : 'vs'}
+            </div>
+            <div class="match-result-team away">
+              <span class="match-result-team-name">${m.awayName}</span>
+            </div>
+          </div>
+        `).join('') : '<p class="text-muted text-sm">No other fixtures</p>'}
       </div>
+
+      ${data.matches?.every(m => m.simulated) ? `
+        <button class="btn btn-gold btn-full mt-12" onclick="advanceMatchday()">Advance to Next Matchday</button>
+      ` : ''}
     `;
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
   }
 }
 
-function showPlayerProfile(playerId) {
-  navigate(`#/player/${playerId}`);
+async function renderMatchResults(container) {
+  try {
+    const data = await api.get('/matches/history');
+
+    container.innerHTML = `
+      <div class="section-header">
+        <div>
+          <div class="section-title">Results</div>
+          <div class="section-subtitle">${data.matches.length} matches played</div>
+        </div>
+      </div>
+
+      ${data.matches.length === 0 ? '<div class="empty-state"><p>No matches played yet</p></div>' : ''}
+
+      ${data.matches.map(m => {
+        const isHome = m.homeTeamId === state.club?.id;
+        const userGoals = isHome ? m.homeGoals : m.awayGoals;
+        const oppGoals = isHome ? m.awayGoals : m.homeGoals;
+        const result = userGoals > oppGoals ? 'W' : userGoals < oppGoals ? 'L' : 'D';
+        return `
+          <div class="match-card-result" onclick="showMatchReport(${m.id})">
+            <div class="match-result-team">
+              <span class="text-muted text-sm" style="min-width:28px">MD${m.matchday}</span>
+              <span class="match-result-team-name">${m.homeName}</span>
+            </div>
+            <div class="match-result-score">${m.homeGoals} - ${m.awayGoals}</div>
+            <div class="match-result-team away">
+              <span class="match-result-team-name">${m.awayName}</span>
+              <span class="result-badge result-${result}">${result}</span>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
 }
 
-// ─── Club Profile ────────────────────────────────────────────────────────────
-async function renderClubProfile(container) {
-  const clubId = location.hash.split('/')[2];
-  if (!clubId) { navigate('#/league'); return; }
-
+async function renderLeagueTable(container) {
   try {
-    const data = await api.get(`/clubs/${clubId}`);
-    const c = data.club;
+    const data = await api.get('/league');
 
-    const matchRows = data.recentMatches.map(m => {
-      const isHome = m.homeTeamId === c.id;
-      const userGoals = isHome ? m.homeGoals : m.awayGoals;
-      const oppGoals = isHome ? m.awayGoals : m.homeGoals;
-      const result = userGoals > oppGoals ? 'W' : userGoals < oppGoals ? 'L' : 'D';
+    const rows = data.standings.map(s => {
+      const isUser = s.clubId === state.club?.id;
+      const isRelegation = s.position > 17;
       return `
-        <div class="match-list-item">
-          <span class="text-muted text-sm" style="min-width:30px">MD${m.matchday}</span>
-          <span class="match-list-team">${m.homeName}</span>
-          <span class="match-list-score">${m.homeGoals} - ${m.awayGoals}</span>
-          <span class="match-list-team">${m.awayName}</span>
-          <span class="result-badge result-${result}">${result}</span>
-        </div>
+        <tr class="${isUser ? 'highlight' : ''} ${isRelegation ? 'relegation' : ''}">
+          <td style="font-weight:700">${s.position}</td>
+          <td style="color:var(--text-primary);font-weight:${isUser ? '700' : '500'}">${s.name}</td>
+          <td>${s.played}</td>
+          <td>${s.won}</td>
+          <td>${s.drawn}</td>
+          <td>${s.lost}</td>
+          <td>${s.goalsFor}</td>
+          <td>${s.goalsAgainst}</td>
+          <td>${s.goalDifference > 0 ? '+' : ''}${s.goalDifference}</td>
+          <td style="font-weight:800;color:var(--gold)">${s.points}</td>
+        </tr>
       `;
     }).join('');
 
-    const topPlayers = data.squad.slice(0, 10).map(p => `
-      <tr onclick="showPlayerProfile(${p.id})" style="cursor:pointer">
-        <td><span class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</span></td>
-        <td><span class="pos-badge pos-${p.position}">${p.position}</span></td>
-        <td style="color:var(--text-primary)">
-          <div class="player-row-name">
-            <img class="player-avatar" src="${playerAvatarUrl(p)}" alt="" loading="lazy">
-            ${p.firstName} ${p.lastName}
-          </div>
-        </td>
-        <td>${p.age}</td>
-        <td>${p.goals}</td>
-        <td>${p.assists}</td>
-      </tr>
-    `).join('');
-
     container.innerHTML = `
-      <div class="page-header">
-        <a href="#/league" class="btn btn-ghost btn-sm mb-16">&larr; Back to League</a>
-      </div>
-
-      <div class="card mb-24">
-        <h1 class="page-title">${c.name}</h1>
-        <p class="page-subtitle">${c.stadium} &middot; ${c.city}</p>
-
-        <div class="stats-grid mt-24">
-          <div class="stat-card">
-            <div class="stat-label">League Position</div>
-            <div class="stat-value text-gold">${data.standing?.position || '-'}/20</div>
-            <div class="stat-detail">${data.standing?.points || 0} points</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Squad Value</div>
-            <div class="stat-value">${formatMoney(data.totalValue)}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Avg OVR</div>
-            <div class="stat-value text-green">${data.avgOvr}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Balance</div>
-            <div class="stat-value">${formatMoney(c.balance)}</div>
-          </div>
+      <div class="section-header">
+        <div>
+          <div class="section-title">League Table</div>
+          <div class="section-subtitle">Matchday ${data.season.currentMatchday} of ${data.season.totalMatchdays}</div>
         </div>
       </div>
 
-      <div class="dashboard-grid">
-        <div class="card">
-          <div class="card-header"><span class="card-title">Key Players</span></div>
-          <div class="table-container" style="border:none">
-            <table>
-              <thead><tr><th>OVR</th><th>POS</th><th>Name</th><th>Age</th><th>G</th><th>A</th></tr></thead>
-              <tbody>${topPlayers}</tbody>
-            </table>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-header"><span class="card-title">Recent Matches</span></div>
-          ${matchRows || '<div class="empty-state"><p>No matches played yet</p></div>'}
-        </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+
+      <div class="flex gap-12 mt-12 text-sm text-muted">
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(26,122,90,0.3);border-radius:2px;vertical-align:middle;margin-right:4px"></span> Your club</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(224,85,85,0.2);border-radius:2px;vertical-align:middle;margin-right:4px"></span> Relegation</span>
       </div>
     `;
   } catch (e) {
@@ -1691,94 +1152,356 @@ async function renderClubProfile(container) {
   }
 }
 
-function showClubProfile(clubId) {
-  navigate(`#/club/${clubId}`);
+// ─── Match Simulation ────────────────────────────────────────────────────────
+async function simulateMatch() {
+  try {
+    const currentData = await api.get('/matches/current');
+    const userMatch = currentData.matches?.find(m =>
+      m.homeTeamId === state.club?.id || m.awayTeamId === state.club?.id
+    );
+    if (!userMatch) { showToast('No match to simulate', 'error'); return; }
+
+    openMatchViewer({
+      homeName: userMatch.homeName || 'Home',
+      awayName: userMatch.awayName || 'Away',
+      homeFormation: '4-4-2',
+      awayFormation: '4-4-2',
+    });
+
+    const data = await api.post('/matches/simulate');
+
+    if (data.userResult && data.userResult.matchId) {
+      try {
+        const report = await api.get(`/matches/report/${data.userResult.matchId}`);
+        feedMatchEvents({
+          events: report.events || [],
+          homeName: userMatch.homeName || 'Home',
+          awayName: userMatch.awayName || 'Away',
+        });
+      } catch (e) { console.error('Failed to load match report:', e); }
+    }
+
+    if (data.userResult) {
+      const r = data.userResult;
+      const userGoals = r.isHome ? r.homeGoals : r.awayGoals;
+      const oppGoals = r.isHome ? r.awayGoals : r.homeGoals;
+      const result = userGoals > oppGoals ? 'Victory!' : userGoals < oppGoals ? 'Defeat' : 'Draw';
+      setTimeout(() => {
+        showToast(`${result} ${userGoals} - ${oppGoals}`, userGoals >= oppGoals ? 'success' : 'error');
+      }, 2000);
+    }
+
+    state.matchViewerCloseCallback = () => {
+      renderNextMatch(document.getElementById('main-content'));
+    };
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
 }
 
-// ─── Match Report ────────────────────────────────────────────────────────────
-async function renderMatchReport(container) {
-  const matchId = location.hash.split('/')[2];
-  if (!matchId) { navigate('#/matches'); return; }
+async function advanceMatchday() {
+  try {
+    const data = await api.post('/matches/advance');
+    if (data.finished) {
+      showToast('Season finished! Check the league table.', 'info');
+    } else {
+      showToast(`Advanced to matchday ${data.matchday}`);
+    }
+    const clubData = await api.get('/club');
+    state.club = clubData.club;
+    updateTopBar();
+    renderNextMatch(document.getElementById('main-content'));
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
 
+// ─── Match Viewer ────────────────────────────────────────────────────────────
+function openMatchViewer(matchInfo) {
+  const overlay = document.getElementById('match-viewer-overlay');
+  overlay.style.display = 'flex';
+  document.getElementById('mv-home-name').textContent = matchInfo.homeName;
+  document.getElementById('mv-away-name').textContent = matchInfo.awayName;
+  const homeBadge = document.getElementById('mv-home-badge');
+  const awayBadge = document.getElementById('mv-away-badge');
+  homeBadge.style.background = 'linear-gradient(135deg, #22a06b, #1a7a5a)';
+  awayBadge.style.background = 'linear-gradient(135deg, #4a9eff, #2a6acc)';
+  document.getElementById('mv-home-score').textContent = '0';
+  document.getElementById('mv-away-score').textContent = '0';
+  document.getElementById('mv-commentary-list').innerHTML = '';
+  const canvas = document.getElementById('mv-canvas');
+  MatchViewer.init(canvas, { events: [], homeName: matchInfo.homeName, awayName: matchInfo.awayName }, matchInfo.homeFormation, matchInfo.awayFormation);
+  MatchViewer.start();
+}
+
+function feedMatchEvents(matchData) {
+  const mvState = MatchViewer.getState();
+  if (!mvState) return;
+  const canvas = document.getElementById('mv-canvas');
+  MatchViewer.stop();
+  MatchViewer.init(canvas, matchData, mvState.homeForm, mvState.awayForm);
+  MatchViewer.start();
+}
+
+function closeMatchViewer() {
+  MatchViewer.stop();
+  document.getElementById('match-viewer-overlay').style.display = 'none';
+  if (state.matchViewerCloseCallback) {
+    state.matchViewerCloseCallback();
+    state.matchViewerCloseCallback = null;
+  }
+}
+
+function mvTogglePause() {
+  const paused = MatchViewer.togglePause();
+  const btn = document.getElementById('mv-pause-btn');
+  btn.innerHTML = paused ? '&#9654; Play' : '&#9646;&#9646; Pause';
+}
+
+function mvSetSpeed(speed) {
+  MatchViewer.setSpeed(speed);
+  document.querySelectorAll('.mv-speed').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.speed) === speed);
+  });
+}
+
+async function showMatchReport(matchId) {
   try {
     const data = await api.get(`/matches/report/${matchId}`);
     const m = data.match;
 
     const eventsHtml = data.events.map(e => {
       const icon = e.type === 'goal' ? '&#9917;' : e.type === 'yellow' ? '&#9888;' : '&#10060;';
-      const color = e.type === 'goal' ? 'var(--green-bright)' : e.type === 'yellow' ? 'var(--gold)' : 'var(--red)';
-      return `
-        <div class="match-event">
-          <span class="minute">${e.minute}'</span>
-          <span style="color:${color}">${icon}</span>
-          ${e.player}${e.assist ? ` (assist: ${e.assist})` : ''}
-        </div>
-      `;
+      return `<div class="commentary-item ${e.type === 'goal' ? 'commentary-goal' : ''}">
+        <span class="commentary-min">${e.minute}'</span>
+        <span>${icon}</span>
+        <span class="commentary-text">${e.player}${e.assist ? ` (assist: ${e.assist})` : ''}</span>
+      </div>`;
     }).join('');
 
-    const statsHtml = `
-      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
-        <div class="stat-card">
-          <div class="stat-label">Possession</div>
-          <div class="stat-value">${data.stats.home.possession}% - ${data.stats.away.possession}%</div>
+    openModal('Match Report', `
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:center;gap:16px">
+          <span style="font-weight:700;font-size:14px">${m.homeName}</span>
+          <span style="font-size:28px;font-weight:900;color:var(--gold)">${m.homeGoals} - ${m.awayGoals}</span>
+          <span style="font-weight:700;font-size:14px">${m.awayName}</span>
         </div>
-        <div class="stat-card">
-          <div class="stat-label">Shots (On Target)</div>
-          <div class="stat-value">${data.stats.home.shots} (${data.stats.home.shotsOnTarget}) - ${data.stats.away.shots} (${data.stats.away.shotsOnTarget})</div>
+        <div class="text-muted text-sm mt-8">Matchday ${m.matchday}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:4px">
+          <span class="attr-label">Possession</span>
+          <span class="attr-value">${data.stats.home.possession}% - ${data.stats.away.possession}%</span>
         </div>
-        <div class="stat-card">
-          <div class="stat-label">Corners / Fouls</div>
-          <div class="stat-value">${data.stats.home.corners}/${data.stats.home.fouls} - ${data.stats.away.corners}/${data.stats.away.fouls}</div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:4px">
+          <span class="attr-label">Shots</span>
+          <span class="attr-value">${data.stats.home.shots} - ${data.stats.away.shots}</span>
+        </div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:4px">
+          <span class="attr-label">Corners</span>
+          <span class="attr-value">${data.stats.home.corners} - ${data.stats.away.corners}</span>
         </div>
       </div>
-    `;
+      <div class="card-title mb-8">Events</div>
+      ${eventsHtml || '<p class="text-muted text-sm">No events</p>'}
+    `);
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
 
-    const ratingsHtml = data.playerRatings.slice(0, 15).map(pr => `
-      <tr>
-        <td style="color:var(--text-primary)">${pr.name}</td>
-        <td class="text-muted">${pr.team === 'home' ? m.homeShort : m.awayShort}</td>
-        <td>${pr.goals > 0 ? pr.goals + 'G' : ''} ${pr.assists > 0 ? pr.assists + 'A' : ''}</td>
-        <td style="font-weight:700;color:${pr.rating >= 7.5 ? 'var(--green-bright)' : pr.rating >= 6.5 ? 'var(--gold)' : 'var(--red)'}">
-          ${pr.rating.toFixed(1)}
-        </td>
-      </tr>
-    `).join('');
+// ─── TRANSFERS SECTION ───────────────────────────────────────────────────────
+async function renderTransfersSection(container) {
+  const tab = state.currentSubTab || 'market';
+  if (tab === 'market') return renderTransferMarket(container);
+  if (tab === 'listed') return renderListedPlayers(container);
+  if (tab === 'history') return renderTransferHistory(container);
+}
+
+async function renderTransferMarket(container) {
+  try {
+    const params = new URLSearchParams({ sort: state.transferSort.col, order: state.transferSort.order });
+    if (state.transferFilter) params.set('position', state.transferFilter);
+    const data = await api.get(`/transfers/market?${params}`);
+
+    const positions = ['', 'GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST'];
+    const posOptions = positions.map(p => `<option value="${p}" ${state.transferFilter === p ? 'selected' : ''}>${p || 'All Positions'}</option>`).join('');
 
     container.innerHTML = `
-      <div class="page-header">
-        <a href="#/matches" class="btn btn-ghost btn-sm mb-16">&larr; Back to Matches</a>
+      <div class="section-header">
+        <div>
+          <div class="section-title">Transfer Market</div>
+          <div class="section-subtitle">${data.players.length} available &middot; Budget: <span class="money">${formatMoney(data.budget)}</span></div>
+        </div>
       </div>
 
-      <div class="card mb-24">
-        <div class="match-card">
-          <div class="match-team">
-            <div class="match-team-name">${m.homeName}</div>
-            <div class="match-team-short">HOME</div>
-          </div>
-          <div class="match-score">${m.homeGoals} - ${m.awayGoals}</div>
-          <div class="match-team">
-            <div class="match-team-name">${m.awayName}</div>
-            <div class="match-team-short">AWAY</div>
-          </div>
-        </div>
-        <div class="text-center text-muted text-sm">Matchday ${m.matchday}</div>
+      <div class="filter-bar">
+        <select onchange="filterTransfers(this.value)">${posOptions}</select>
       </div>
 
-      ${statsHtml}
-
-      <div class="dashboard-grid mt-24">
-        <div class="card">
-          <div class="card-header"><span class="card-title">Match Events</span></div>
-          <div class="match-events">${eventsHtml || '<p class="text-muted">No events</p>'}</div>
-        </div>
-        <div class="card">
-          <div class="card-header"><span class="card-title">Player Ratings</span></div>
-          <div class="table-container" style="border:none">
-            <table>
-              <thead><tr><th>Player</th><th>Team</th><th>Stats</th><th>Rating</th></tr></thead>
-              <tbody>${ratingsHtml}</tbody>
-            </table>
+      ${data.players.map(p => `
+        <div class="transfer-card">
+          <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+          <div class="transfer-card-info">
+            <div class="transfer-card-name">${p.firstName} ${p.lastName}</div>
+            <div class="transfer-card-details">
+              <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+              <span>Age ${p.age}</span>
+              <span>OVR ${p.ovr}</span>
+              <span>Pot ${p.potential}</span>
+            </div>
           </div>
+          <div class="transfer-card-price">
+            <div class="transfer-price">${formatMoney(p.askingPrice)}</div>
+            <button class="btn btn-primary btn-xs mt-8" onclick="buyPlayer(${p.id}, '${p.firstName} ${p.lastName}', ${p.askingPrice})"
+              ${p.askingPrice > data.budget ? 'disabled' : ''}>
+              Sign
+            </button>
+          </div>
+        </div>
+      `).join('')}
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+function filterTransfers(pos) {
+  state.transferFilter = pos;
+  renderTransferMarket(document.getElementById('main-content'));
+}
+
+async function buyPlayer(playerId, name, price) {
+  if (!confirm(`Sign ${name} for ${formatMoney(price)}?`)) return;
+  try {
+    const data = await api.post(`/transfers/buy/${playerId}`);
+    showToast(data.message);
+    const clubData = await api.get('/club');
+    state.club = clubData.club;
+    updateTopBar();
+    renderTransferMarket(document.getElementById('main-content'));
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function renderListedPlayers(container) {
+  try {
+    const data = await api.get('/transfers/listed');
+    container.innerHTML = `
+      <div class="section-header">
+        <div>
+          <div class="section-title">Listed for Sale</div>
+          <div class="section-subtitle">${data.players.length} players</div>
+        </div>
+      </div>
+      ${data.players.length === 0 ? '<div class="empty-state"><p>No players listed</p></div>' : ''}
+      ${data.players.map(p => `
+        <div class="transfer-card">
+          <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+          <div class="transfer-card-info">
+            <div class="transfer-card-name">${p.firstName} ${p.lastName}</div>
+            <div class="transfer-card-details">
+              <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+              <span>Age ${p.age}</span>
+              <span>OVR ${p.ovr}</span>
+            </div>
+          </div>
+          <div class="transfer-card-price">
+            <div class="transfer-price">${formatMoney(p.askingPrice)}</div>
+          </div>
+        </div>
+      `).join('')}
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+async function renderTransferHistory(container) {
+  try {
+    const data = await api.get('/finances');
+    const transfers = data.recentTransfers || [];
+    container.innerHTML = `
+      <div class="section-header">
+        <div>
+          <div class="section-title">Transfer History</div>
+          <div class="section-subtitle">${transfers.length} transfers</div>
+        </div>
+      </div>
+      ${transfers.length === 0 ? '<div class="empty-state"><p>No transfers yet</p></div>' : ''}
+      ${transfers.map(t => `
+        <div class="transfer-card">
+          <div class="transfer-card-info">
+            <div class="transfer-card-name">${t.firstName} ${t.lastName}</div>
+            <div class="transfer-card-details">
+              <span>MD${t.matchday}</span>
+              <span class="${t.toClubId === state.club?.id ? 'text-green' : 'text-red'}">${t.toClubId === state.club?.id ? 'In' : 'Out'}</span>
+            </div>
+          </div>
+          <div class="transfer-card-price">
+            <div class="transfer-price">${formatMoney(t.fee)}</div>
+          </div>
+        </div>
+      `).join('')}
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+// ─── CLUB SECTION ────────────────────────────────────────────────────────────
+async function renderClubSection(container) {
+  const tab = state.currentSubTab || 'overview';
+  if (tab === 'overview') return renderClubOverview(container);
+  if (tab === 'finances') return renderFinances(container);
+  if (tab === 'training') return renderTraining(container);
+  if (tab === 'tactics') return renderTacticsSettings(container);
+}
+
+async function renderClubOverview(container) {
+  try {
+    const clubData = await api.get('/club');
+    const club = clubData.club;
+    state.club = club;
+
+    const leagueData = await api.get('/league');
+    const standing = leagueData.standings.find(s => s.clubId === club.id);
+
+    container.innerHTML = `
+      <div class="club-overview-card">
+        <div class="club-overview-badge">&#9917;</div>
+        <div class="club-overview-name">${club.name}</div>
+        <div class="club-overview-info">${club.stadium} &middot; ${club.city}</div>
+        <div class="club-stats-grid">
+          <div class="club-stat-item">
+            <div class="club-stat-value text-gold">${formatMoney(club.balance)}</div>
+            <div class="club-stat-label">Balance</div>
+          </div>
+          <div class="club-stat-item">
+            <div class="club-stat-value text-green">${formatMoney(club.transferBudget)}</div>
+            <div class="club-stat-label">Transfer Budget</div>
+          </div>
+          <div class="club-stat-item">
+            <div class="club-stat-value">${standing ? standing.position + '/' + 20 : '-'}</div>
+            <div class="club-stat-label">League Pos</div>
+          </div>
+          <div class="club-stat-item">
+            <div class="club-stat-value">${standing ? standing.points : 0}</div>
+            <div class="club-stat-label">Points</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Quick Actions</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button class="btn btn-ghost" onclick="switchSubTab('training')">&#9650; Training</button>
+          <button class="btn btn-ghost" onclick="switchSubTab('tactics')">&#9881; Tactics</button>
+          <button class="btn btn-ghost" onclick="switchSubTab('finances')">&#36; Finances</button>
+          <button class="btn btn-ghost" onclick="switchSection('squad');setTimeout(()=>switchSubTab('formation'),50)">&#9734; Formation</button>
         </div>
       </div>
     `;
@@ -1787,8 +1510,246 @@ async function renderMatchReport(container) {
   }
 }
 
-function showMatchReport(matchId) {
-  navigate(`#/matchReport/${matchId}`);
+async function renderFinances(container) {
+  try {
+    const data = await api.get('/finances');
+    const wageRows = data.players.slice(0, 10).map(p => `
+      <div class="player-card" style="padding:8px;margin-bottom:4px">
+        <img class="player-card-avatar" style="width:32px;height:32px" src="${playerAvatarUrl(p)}" alt="">
+        <div class="player-card-info">
+          <div class="player-card-name" style="font-size:12px">${p.firstName} ${p.lastName}</div>
+          <div class="player-card-meta">
+            <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+            <span class="player-card-age">Age ${p.age}</span>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div class="money" style="font-size:12px;font-weight:700">${formatMoney(p.salary)}/w</div>
+          <div class="text-muted text-sm">${formatMoney(p.value)}</div>
+        </div>
+      </div>
+    `).join('');
+
+    container.innerHTML = `
+      <div class="section-header">
+        <div>
+          <div class="section-title">Finances</div>
+          <div class="section-subtitle">Club financial overview</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px">
+        <div class="squad-stat">
+          <div class="squad-stat-value text-gold">${formatMoney(data.club.balance)}</div>
+          <div class="squad-stat-label">Balance</div>
+        </div>
+        <div class="squad-stat">
+          <div class="squad-stat-value text-green">${formatMoney(data.club.transferBudget)}</div>
+          <div class="squad-stat-label">Transfer Budget</div>
+        </div>
+        <div class="squad-stat">
+          <div class="squad-stat-value text-red">${formatMoney(data.totalWages)}</div>
+          <div class="squad-stat-label">Weekly Wages</div>
+        </div>
+        <div class="squad-stat">
+          <div class="squad-stat-value">${formatMoney(data.totalValue)}</div>
+          <div class="squad-stat-label">Squad Value</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Wage Bill</span>
+          <span class="card-subtitle">Top earners</span>
+        </div>
+        ${wageRows}
+      </div>
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+async function renderTraining(container) {
+  try {
+    const data = await api.get('/training');
+
+    const focusOptions = ['general', 'pace', 'shooting', 'passing', 'defending', 'physical'];
+    const focusBtns = focusOptions.map(f =>
+      `<button class="formation-btn ${state.trainingFocus === f ? 'active' : ''}" onclick="setTrainingFocus('${f}')">${f.charAt(0).toUpperCase() + f.slice(1)}</button>`
+    ).join('');
+
+    container.innerHTML = `
+      <div class="section-header">
+        <div>
+          <div class="section-title">Training</div>
+          <div class="section-subtitle">${data.players.length} players &middot; Focus: ${state.trainingFocus}</div>
+        </div>
+        <button class="btn btn-gold btn-sm" onclick="trainBatch()">Train All</button>
+      </div>
+
+      <div class="formation-selector mb-12">${focusBtns}</div>
+
+      ${data.players.map(p => `
+        <div class="player-card">
+          <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+          <div class="player-card-info">
+            <div class="player-card-name">${p.firstName} ${p.lastName}</div>
+            <div class="player-card-meta">
+              <span class="pos-badge pos-${p.position}">${p.position}</span>
+              <span class="player-card-age">Age ${p.age}</span>
+              <span style="font-size:11px">${p.fitness}%
+                <span class="bar-container"><span class="bar-fill ${barColor(p.fitness)}" style="width:${p.fitness}%"></span></span>
+              </span>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-xs" onclick="trainPlayer(${p.id}, '${p.firstName} ${p.lastName}')"
+            ${p.fitness < 30 ? 'disabled' : ''}>
+            Train
+          </button>
+        </div>
+      `).join('')}
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+function setTrainingFocus(focus) {
+  state.trainingFocus = focus;
+  renderTraining(document.getElementById('main-content'));
+}
+
+async function trainPlayer(playerId, name) {
+  try {
+    const data = await api.post(`/training/${playerId}`, { focus: state.trainingFocus });
+    const improvements = Object.entries(data.improvements || {}).map(([k, v]) => `${k} +${v - data.player[k]}`).join(', ');
+    showToast(`${name} trained! ${improvements || 'No improvement'}`);
+    const clubData = await api.get('/club');
+    state.club = clubData.club;
+    updateTopBar();
+    renderTraining(document.getElementById('main-content'));
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function trainBatch() {
+  if (!confirm(`Train entire squad with focus: ${state.trainingFocus}?`)) return;
+  try {
+    const data = await api.post('/training/batch', { focus: state.trainingFocus });
+    showToast(data.message);
+    const clubData = await api.get('/club');
+    state.club = clubData.club;
+    updateTopBar();
+    renderTraining(document.getElementById('main-content'));
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function renderTacticsSettings(container) {
+  try {
+    const data = await api.get('/tactics');
+    const t = data.tactics;
+
+    const mentalityBtns = ['defensive','counter','balanced','attacking','all-out'].map(m =>
+      `<button class="formation-btn ${(t.mentality || 'balanced') === m ? 'active' : ''}" onclick="setTacticSetting('mentality','${m}')">${m.replace('-',' ')}</button>`
+    ).join('');
+
+    const pressingBtns = ['low','normal','high','gegenpress'].map(p =>
+      `<button class="formation-btn ${(t.pressing || 'normal') === p ? 'active' : ''}" onclick="setTacticSetting('pressing','${p}')">${p === 'gegenpress' ? 'Gegenpress' : p}</button>`
+    ).join('');
+
+    const tempoBtns = ['slow','normal','fast','relentless'].map(t =>
+      `<button class="formation-btn ${(t.tempo || 'normal') === t ? 'active' : ''}" onclick="setTacticSetting('tempo','${t}')">${t}</button>`
+    ).join('');
+
+    const passingBtns = ['short','mixed','long','direct'].map(p =>
+      `<button class="formation-btn ${(t.passingStyle || 'mixed') === p ? 'active' : ''}" onclick="setTacticSetting('passingStyle','${p}')">${p}</button>`
+    ).join('');
+
+    container.innerHTML = `
+      <div class="section-header">
+        <div>
+          <div class="section-title">Tactics</div>
+          <div class="section-subtitle">Set your game plan</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Mentality</span></div>
+        <div class="formation-selector">${mentalityBtns}</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Pressing</span></div>
+        <div class="formation-selector">${pressingBtns}</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Tempo</span></div>
+        <div class="formation-selector">${tempoBtns}</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Passing Style</span></div>
+        <div class="formation-selector">${passingBtns}</div>
+      </div>
+
+      <button class="btn btn-primary btn-full mt-12" onclick="switchSection('squad');setTimeout(()=>switchSubTab('formation'),50)">
+        Go to Formation &#8594;
+      </button>
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+async function setTacticSetting(key, value) {
+  try {
+    const current = await api.get('/tactics');
+    const t = current.tactics;
+    await api.post('/tactics', {
+      formation: t.formation || '4-4-2',
+      mentality: key === 'mentality' ? value : (t.mentality || 'balanced'),
+      pressing: key === 'pressing' ? value : (t.pressing || 'normal'),
+      tempo: key === 'tempo' ? value : (t.tempo || 'normal'),
+      passingStyle: key === 'passingStyle' ? value : (t.passingStyle || 'mixed'),
+      captainId: t.captainId || null,
+      lineup: t.lineup || {},
+    });
+    showToast('Tactic updated!');
+    renderTacticsSettings(document.getElementById('main-content'));
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+async function showNotifications() {
+  try {
+    const data = await api.get('/notifications');
+    const items = data.notifications.map(n => ({
+      icon: n.type === 'match_win' ? '&#9917;' : n.type === 'transfer_in' ? '&#8644;' : '&#128276;',
+      label: `<div><div style="font-weight:600">${n.title}</div><div class="text-muted text-sm">${n.message}</div></div>`,
+      onclick: '',
+    }));
+
+    if (items.length === 0) {
+      items.push({ icon: '&#128276;', label: 'No notifications', onclick: '' });
+    }
+
+    openActionSheet('Notifications', items);
+
+    // Mark as read
+    if (data.unreadCount > 0) {
+      await api.post('/notifications/read-all');
+      document.getElementById('notif-badge').style.display = 'none';
+    }
+  } catch (e) {
+    showToast('Failed to load notifications', 'error');
+  }
 }
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
@@ -1799,7 +1760,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('auth-screen').style.display = 'flex';
   }
 
-  // Enter key handlers for auth forms
   document.getElementById('login-password')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') handleLogin();
   });
