@@ -172,6 +172,7 @@ async function handleCreateClub() {
 }
 
 function handleLogout() {
+  stopMatchPolling();
   state.token = null;
   state.user = null;
   state.club = null;
@@ -218,6 +219,11 @@ function updateTopBar() {
 function switchSection(section) {
   state.currentSection = section;
   state.currentSubTab = null;
+
+  // Stop polling when leaving matches/home
+  if (section !== 'matches' && section !== 'home') {
+    stopMatchPolling();
+  }
 
   // Update bottom nav
   document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -325,10 +331,14 @@ async function renderHome(container) {
       ? Math.round(squadData.players.reduce((s, p) => s + p.ovr, 0) / squadData.players.length)
       : 0;
 
+    // Get league data for position count
+    const leagueData = await api.get('/league');
+    const totalClubs = leagueData.standings.length || 20;
+
     let nextMatchHtml = '';
     if (nextMatch) {
       const isHome = nextMatch.homeTeamId === club.id;
-      const oppName = isHome ? nextMatch.awayName : nextMatch.homeName;
+      const oppName = isHome ? (nextMatch.awayName || 'Away') : (nextMatch.homeName || 'Home');
       nextMatchHtml = `
         <div class="next-match-card">
           <div class="next-match-label">
@@ -378,9 +388,9 @@ async function renderHome(container) {
             <span class="result-badge result-${result}" style="width:auto;padding:4px 10px;font-size:11px">${resultLabel} ${userGoals}-${oppGoals}</span>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
-            <span style="font-weight:600">${lastMatch.homeName}</span>
+            <span style="font-weight:600">${lastMatch.homeName || 'Home'}</span>
             <span style="font-weight:900;color:var(--gold);font-size:16px;letter-spacing:2px">${lastMatch.homeGoals} - ${lastMatch.awayGoals}</span>
-            <span style="font-weight:600">${lastMatch.awayName}</span>
+            <span style="font-weight:600">${lastMatch.awayName || 'Away'}</span>
           </div>
         </div>
       `;
@@ -393,7 +403,7 @@ async function renderHome(container) {
             <div class="home-hero-greeting">Season ${season.id || season.seasonNumber || 1}</div>
             <div class="home-hero-club">${club.name}</div>
           </div>
-          <div class="home-hero-season">MD ${season.currentMatchday}/${season.totalMatchdays}</div>
+          <div class="home-hero-season">MD ${season.currentMatchday}/${season.totalMatchdays || 38}</div>
         </div>
         <div class="home-stats-row">
           <div class="home-stat">
@@ -401,7 +411,7 @@ async function renderHome(container) {
             <div class="home-stat-label">Balance</div>
           </div>
           <div class="home-stat">
-            <div class="home-stat-value green">${standing ? standing.position + '/' + 20 : '-'}</div>
+            <div class="home-stat-value green">${standing ? standing.position + '/' + totalClubs : '-'}</div>
             <div class="home-stat-label">Position</div>
           </div>
           <div class="home-stat">
@@ -412,6 +422,16 @@ async function renderHome(container) {
       </div>
 
       ${nextMatchHtml}
+
+      <div class="season-progress">
+        <div class="season-progress-label">
+          <span>Season Progress</span>
+          <span>MD ${season.currentMatchday}/${season.totalMatchdays || 38}</span>
+        </div>
+        <div class="season-progress-bar">
+          <div class="season-progress-fill" style="width:${Math.round((season.currentMatchday / (season.totalMatchdays || 38)) * 100)}%"></div>
+        </div>
+      </div>
 
       <div class="quick-actions">
         <button class="quick-action-btn" onclick="switchSection('squad');setTimeout(()=>switchSubTab('formation'),50)">
@@ -447,6 +467,9 @@ async function renderHome(container) {
 
     // Load league preview
     loadLeaguePreview();
+
+    // Start polling for match updates
+    startMatchPolling();
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
   }
@@ -979,11 +1002,60 @@ async function sellPlayer(playerId, name) {
 }
 
 // ─── MATCHES SECTION ─────────────────────────────────────────────────────────
+let matchPollTimer = null;
+let lastSimulatedMatchday = 0;
+let lastMatchResult = null;
+
 async function renderMatchesSection(container) {
   const tab = state.currentSubTab || 'next';
   if (tab === 'next') return renderNextMatch(container);
   if (tab === 'results') return renderMatchResults(container);
   if (tab === 'league') return renderLeagueTable(container);
+}
+
+function startMatchPolling() {
+  stopMatchPolling();
+  matchPollTimer = setInterval(pollMatchStatus, 3000);
+}
+
+function stopMatchPolling() {
+  if (matchPollTimer) { clearInterval(matchPollTimer); matchPollTimer = null; }
+}
+
+async function pollMatchStatus() {
+  try {
+    const data = await api.get('/matches/status');
+    if (data.status === 'finished') {
+      stopMatchPolling();
+      return;
+    }
+
+    // Detect new simulation results
+    if (data.allSimulated && data.currentMatchday > lastSimulatedMatchday) {
+      lastSimulatedMatchday = data.currentMatchday;
+      if (data.userMatch && data.userMatch.simulated) {
+        const r = data.userMatch;
+        const isHome = r.homeTeamId === state.club?.id;
+        const userGoals = isHome ? r.homeGoals : r.awayGoals;
+        const oppGoals = isHome ? r.awayGoals : r.homeGoals;
+
+        // Show result notification
+        const result = userGoals > oppGoals ? 'Victory!' : userGoals < oppGoals ? 'Defeat' : 'Draw';
+        showToast(`${result} ${r.homeName} ${r.homeGoals}-${r.awayGoals} ${r.awayName}`, userGoals >= oppGoals ? 'success' : 'error');
+
+        // Store for match viewer
+        lastMatchResult = data.userMatch;
+      }
+      // Refresh the current view
+      const main = document.getElementById('main-content');
+      if (state.currentSection === 'matches' || state.currentSection === 'home') {
+        const render = state.currentSection === 'home' ? renderHome : renderNextMatch;
+        render(main);
+      }
+    }
+  } catch (e) {
+    // Silent fail for polling
+  }
 }
 
 async function renderNextMatch(container) {
@@ -992,17 +1064,23 @@ async function renderNextMatch(container) {
 
     const userMatch = data.matches?.find(m => m.homeTeamId === state.club?.id || m.awayTeamId === state.club?.id);
     const isHome = userMatch?.homeTeamId === state.club?.id;
-    const oppName = userMatch ? (isHome ? userMatch.awayName : userMatch.homeName) : '';
+    const oppName = userMatch ? (isHome ? (userMatch.awayName || 'Away') : (userMatch.homeName || 'Home')) : '';
 
     const otherMatches = data.matches?.filter(m =>
       m.homeTeamId !== state.club?.id && m.awayTeamId !== state.club?.id
     ) || [];
 
+    // Start polling for auto-simulation
+    startMatchPolling();
+
+    const homeName = userMatch ? (userMatch.homeName || 'Home') : '';
+    const awayName = userMatch ? (userMatch.awayName || 'Away') : '';
+
     container.innerHTML = `
       <div class="section-header">
         <div>
           <div class="section-title">Match Center</div>
-          <div class="section-subtitle">Matchday ${data.matchday} &middot; ${data.status}</div>
+          <div class="section-subtitle">Matchday ${data.matchday}/${data.totalMatchdays || '?'} &middot; ${data.status}</div>
         </div>
       </div>
 
@@ -1010,51 +1088,54 @@ async function renderNextMatch(container) {
         <div class="next-match-card">
           <div class="next-match-label">
             <span class="live-dot"></span>
-            Your Match &middot; ${isHome ? 'Home' : 'Away'}
+            ${userMatch.simulated ? 'Result' : 'Upcoming'} &middot; ${isHome ? 'Home' : 'Away'}
           </div>
           <div class="next-match-teams">
             <div class="next-match-team">
               <div class="next-match-team-badge" style="background:linear-gradient(135deg, var(--green), var(--green-light))">&#9917;</div>
-              <div class="next-match-team-name">${userMatch.homeName}</div>
+              <div class="next-match-team-name">${homeName}</div>
             </div>
-            <div class="next-match-vs">VS</div>
+            <div class="next-match-vs">${userMatch.simulated ? '' : 'VS'}</div>
             <div class="next-match-team">
               <div class="next-match-team-badge" style="background:linear-gradient(135deg, #4a9eff, #2a6acc)">&#9917;</div>
-              <div class="next-match-team-name">${userMatch.awayName}</div>
+              <div class="next-match-team-name">${awayName}</div>
             </div>
           </div>
-          <div class="next-match-action">
-            ${!userMatch.simulated ? `
-              <button class="btn btn-primary" onclick="simulateMatch()">Play Match</button>
-            ` : `
-              <button class="btn btn-gold" onclick="showMatchReport(${userMatch.id})">View Report</button>
-            `}
-          </div>
+          ${userMatch.simulated ? `
+            <div style="text-align:center;margin:8px 0">
+              <span style="font-size:28px;font-weight:900;color:var(--gold);letter-spacing:3px">${userMatch.homeGoals} - ${userMatch.awayGoals}</span>
+            </div>
+            <div class="next-match-action">
+              <button class="btn btn-gold" onclick="showMatchReport('${userMatch.id}')">View Report</button>
+            </div>
+          ` : `
+            <div class="autoplay-notice">
+              <div class="spinner"></div>
+              <span>Match will be played automatically...</span>
+            </div>
+          `}
         </div>
-      ` : '<div class="empty-state"><p>No match scheduled</p></div>'}
+      ` : '<div class="empty-state"><p>No match scheduled for this matchday</p></div>'}
 
       <div class="card">
         <div class="card-header">
           <span class="card-title">Other Fixtures</span>
+          <span class="card-subtitle">MD ${data.matchday}</span>
         </div>
         ${otherMatches.length > 0 ? otherMatches.map(m => `
-          <div class="match-card-result" ${m.simulated ? `onclick="showMatchReport(${m.id})"` : ''}>
+          <div class="match-card-result" ${m.simulated ? `onclick="showMatchReport('${m.id}')"` : ''}>
             <div class="match-result-team">
-              <span class="match-result-team-name">${m.homeName}</span>
+              <span class="match-result-team-name">${m.homeName || 'Home'}</span>
             </div>
             <div class="match-result-score ${m.simulated ? '' : 'pending'}">
               ${m.simulated ? `${m.homeGoals} - ${m.awayGoals}` : 'vs'}
             </div>
             <div class="match-result-team away">
-              <span class="match-result-team-name">${m.awayName}</span>
+              <span class="match-result-team-name">${m.awayName || 'Away'}</span>
             </div>
           </div>
         `).join('') : '<p class="text-muted text-sm">No other fixtures</p>'}
       </div>
-
-      ${data.matches?.every(m => m.simulated) ? `
-        <button class="btn btn-gold btn-full mt-12" onclick="advanceMatchday()">Advance to Next Matchday</button>
-      ` : ''}
     `;
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
@@ -1081,14 +1162,14 @@ async function renderMatchResults(container) {
         const oppGoals = isHome ? m.awayGoals : m.homeGoals;
         const result = userGoals > oppGoals ? 'W' : userGoals < oppGoals ? 'L' : 'D';
         return `
-          <div class="match-card-result" onclick="showMatchReport(${m.id})">
+          <div class="match-card-result" onclick="showMatchReport('${m.id}')">
             <div class="match-result-team">
               <span class="text-muted text-sm" style="min-width:28px">MD${m.matchday}</span>
-              <span class="match-result-team-name">${m.homeName}</span>
+              <span class="match-result-team-name">${m.homeName || 'Home'}</span>
             </div>
             <div class="match-result-score">${m.homeGoals} - ${m.awayGoals}</div>
             <div class="match-result-team away">
-              <span class="match-result-team-name">${m.awayName}</span>
+              <span class="match-result-team-name">${m.awayName || 'Away'}</span>
               <span class="result-badge result-${result}">${result}</span>
             </div>
           </div>
@@ -1127,7 +1208,7 @@ async function renderLeagueTable(container) {
       <div class="section-header">
         <div>
           <div class="section-title">League Table</div>
-          <div class="section-subtitle">Matchday ${data.season.currentMatchday} of ${data.season.totalMatchdays}</div>
+          <div class="section-subtitle">Matchday ${data.season.currentMatchday} of ${data.season.totalMatchdays || 38}</div>
         </div>
       </div>
 
@@ -1152,50 +1233,31 @@ async function renderLeagueTable(container) {
   }
 }
 
-// ─── Match Simulation ────────────────────────────────────────────────────────
+// ─── Match Simulation (auto - viewer only) ───────────────────────────────────
 async function simulateMatch() {
-  try {
-    const currentData = await api.get('/matches/current');
-    const userMatch = currentData.matches?.find(m =>
-      m.homeTeamId === state.club?.id || m.awayTeamId === state.club?.id
-    );
-    if (!userMatch) { showToast('No match to simulate', 'error'); return; }
-
-    openMatchViewer({
-      homeName: userMatch.homeName || 'Home',
-      awayName: userMatch.awayName || 'Away',
-      homeFormation: '4-4-2',
-      awayFormation: '4-4-2',
-    });
-
-    const data = await api.post('/matches/simulate');
-
-    if (data.userResult && data.userResult.matchId) {
-      try {
-        const report = await api.get(`/matches/report/${data.userResult.matchId}`);
-        feedMatchEvents({
-          events: report.events || [],
-          homeName: userMatch.homeName || 'Home',
-          awayName: userMatch.awayName || 'Away',
-        });
-      } catch (e) { console.error('Failed to load match report:', e); }
+  // Matches are simulated automatically. This just opens the viewer for the latest result.
+  if (lastMatchResult) {
+    try {
+      const report = await api.get(`/matches/report/${lastMatchResult.id}`);
+      openMatchViewer({
+        homeName: report.match.homeName || 'Home',
+        awayName: report.match.awayName || 'Away',
+        homeFormation: '4-4-2',
+        awayFormation: '4-4-2',
+      });
+      feedMatchEvents({
+        events: report.events || [],
+        homeName: report.match.homeName || 'Home',
+        awayName: report.match.awayName || 'Away',
+      });
+      state.matchViewerCloseCallback = () => {
+        renderNextMatch(document.getElementById('main-content'));
+      };
+    } catch (e) {
+      showToast(e.message, 'error');
     }
-
-    if (data.userResult) {
-      const r = data.userResult;
-      const userGoals = r.isHome ? r.homeGoals : r.awayGoals;
-      const oppGoals = r.isHome ? r.awayGoals : r.homeGoals;
-      const result = userGoals > oppGoals ? 'Victory!' : userGoals < oppGoals ? 'Defeat' : 'Draw';
-      setTimeout(() => {
-        showToast(`${result} ${userGoals} - ${oppGoals}`, userGoals >= oppGoals ? 'success' : 'error');
-      }, 2000);
-    }
-
-    state.matchViewerCloseCallback = () => {
-      renderNextMatch(document.getElementById('main-content'));
-    };
-  } catch (e) {
-    showToast(e.message, 'error');
+  } else {
+    showToast('Match will be played automatically', 'info');
   }
 }
 
@@ -1269,6 +1331,8 @@ async function showMatchReport(matchId) {
   try {
     const data = await api.get(`/matches/report/${matchId}`);
     const m = data.match;
+    const homeName = m.homeName || 'Home';
+    const awayName = m.awayName || 'Away';
 
     const eventsHtml = data.events.map(e => {
       const icon = e.type === 'goal' ? '&#9917;' : e.type === 'yellow' ? '&#9888;' : '&#10060;';
@@ -1282,9 +1346,9 @@ async function showMatchReport(matchId) {
     openModal('Match Report', `
       <div style="text-align:center;margin-bottom:16px">
         <div style="display:flex;align-items:center;justify-content:center;gap:16px">
-          <span style="font-weight:700;font-size:14px">${m.homeName}</span>
+          <span style="font-weight:700;font-size:14px">${homeName}</span>
           <span style="font-size:28px;font-weight:900;color:var(--gold)">${m.homeGoals} - ${m.awayGoals}</span>
-          <span style="font-weight:700;font-size:14px">${m.awayName}</span>
+          <span style="font-weight:700;font-size:14px">${awayName}</span>
         </div>
         <div class="text-muted text-sm mt-8">Matchday ${m.matchday}</div>
       </div>
@@ -1467,6 +1531,7 @@ async function renderClubOverview(container) {
 
     const leagueData = await api.get('/league');
     const standing = leagueData.standings.find(s => s.clubId === club.id);
+    const totalClubs = leagueData.standings.length || 20;
 
     container.innerHTML = `
       <div class="club-overview-card">
@@ -1483,7 +1548,7 @@ async function renderClubOverview(container) {
             <div class="club-stat-label">Transfer Budget</div>
           </div>
           <div class="club-stat-item">
-            <div class="club-stat-value">${standing ? standing.position + '/' + 20 : '-'}</div>
+            <div class="club-stat-value">${standing ? standing.position + '/' + totalClubs : '-'}</div>
             <div class="club-stat-label">League Pos</div>
           </div>
           <div class="club-stat-item">

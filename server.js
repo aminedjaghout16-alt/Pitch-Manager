@@ -6,7 +6,7 @@ const path = require('path');
 const { getDb, useLocalDB, FieldValue } = require('./db');
 const { generatePlayer, insertPlayer, generateTransferMarket, calculateOVR, calculateValue, calculateSalary } = require('./player-generator');
 const { simulateMatchday, getTeamStrength } = require('./match-simulator');
-const { initializeGame, createUserClub, getStandings, getSeason, advanceMatchday, getCurrentMatchdayFixtures, aiTransferActions } = require('./league-manager');
+const { initializeGame, createUserClub, getStandings, getSeason, advanceMatchday, getCurrentMatchdayFixtures, aiTransferActions, startAutoSimulation } = require('./league-manager');
 
 // Use FieldValue from db module for local dev, or firebase-admin for production
 const admin = useLocalDB ? { firestore: { FieldValue } } : require('firebase-admin');
@@ -17,6 +17,32 @@ const JWT_SECRET = process.env.JWT_SECRET || 'pitch-manager-secret-2024';
 app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
+
+// ─── Club Name Cache & Resolver ─────────────────────────────────────────────
+const clubNameCache = {};
+async function resolveClubName(clubId) {
+  if (clubNameCache[clubId]) return clubNameCache[clubId];
+  const db = getDb();
+  const doc = await db.collection('clubs').doc(clubId).get();
+  const data = doc.exists ? doc.data() : null;
+  const name = data?.name || 'Unknown Club';
+  const shortName = data?.shortName || 'UNK';
+  clubNameCache[clubId] = { name, shortName };
+  return { name, shortName };
+}
+async function enrichMatch(m) {
+  const [home, away] = await Promise.all([
+    resolveClubName(m.homeTeamId),
+    resolveClubName(m.awayTeamId),
+  ]);
+  return {
+    ...m,
+    homeName: home.name,
+    homeShort: home.shortName,
+    awayName: away.name,
+    awayShort: away.shortName,
+  };
+}
 
 function formatMoney(n) {
   if(n==null)return '$0';
@@ -88,6 +114,7 @@ app.post('/api/club/create', auth, async(req,res)=>{
   if(!name||!stadium||!city) return res.status(400).json({error:'All fields required'});
   try {
     const clubId=await createUserClub(req.user.id,name,stadium,city);
+    delete clubNameCache[clubId]; // Invalidate cache for renamed club
     const db=getDb();
     const doc=await db.collection('clubs').doc(clubId).get();
     res.json({club:{id:doc.id,...doc.data()}});
@@ -116,10 +143,18 @@ app.get('/api/dashboard', auth, requireClub, async(req,res)=>{
     const standing=standings.find(s=>s.clubId===req.user.clubId);
 
     const nextSnap=await db.collection('matches').where('matchday','==',season.currentMatchday).where('simulated','==',false).get();
-    const nextMatch=nextSnap.docs.map(d=>({id:d.id,...d.data()})).find(m=>m.homeTeamId===req.user.clubId||m.awayTeamId===req.user.clubId)||null;
+    let nextMatch=null;
+    if(!nextSnap.empty){
+      const allNext=await Promise.all(nextSnap.docs.map(async d=>enrichMatch({id:d.id,...d.data()})));
+      nextMatch=allNext.find(m=>m.homeTeamId===req.user.clubId||m.awayTeamId===req.user.clubId)||null;
+    }
 
     const lastSnap=await db.collection('matches').where('simulated','==',true).orderBy('playedAt','desc').limit(20).get();
-    const lastMatch=lastSnap.docs.map(d=>({id:d.id,...d.data()})).find(m=>m.homeTeamId===req.user.clubId||m.awayTeamId===req.user.clubId)||null;
+    let lastMatch=null;
+    if(!lastSnap.empty){
+      const allLast=await Promise.all(lastSnap.docs.map(async d=>enrichMatch({id:d.id,...d.data()})));
+      lastMatch=allLast.find(m=>m.homeTeamId===req.user.clubId||m.awayTeamId===req.user.clubId)||null;
+    }
 
     const squadSnap=await db.collection('players').where('clubId','==',req.user.clubId).get();
     const totalWages=squadSnap.docs.reduce((s,d)=>s+d.data().salary,0);
@@ -344,14 +379,15 @@ app.get('/api/matches/current', auth, requireClub, async(req,res)=>{
   try {
     const db=getDb();
     const season=await getSeason();
+    if (!season) return res.status(500).json({error:'Season not initialized'});
     const snap=await db.collection('matches').where('matchday','==',season.currentMatchday).get();
-    const matches=await Promise.all(snap.docs.map(async d=>{
-      const m={id:d.id,...d.data()};
-      const [h,a]=await Promise.all([db.collection('clubs').doc(m.homeTeamId).get(),db.collection('clubs').doc(m.awayTeamId).get()]);
-      return{...m,homeName:h.data()?.name,homeShort:h.data()?.shortName,awayName:a.data()?.name,awayShort:a.data()?.shortName};
-    }));
-    const userMatch=matches.find(m=>m.homeTeamId===req.user.clubId||m.awayTeamId===req.user.clubId);
-    res.json({matchday:season.currentMatchday,matches,userMatch,status:season.status});
+    const matches=await Promise.all(snap.docs.map(async d=>enrichMatch({id:d.id,...d.data()})));
+    const userMatch=matches.find(m=>m.homeTeamId===req.user.clubId||m.awayTeamId===req.user.clubId)||null;
+
+    // Check if all matches are simulated
+    const allSimulated = matches.length > 0 && matches.every(m => m.simulated);
+
+    res.json({matchday:season.currentMatchday,matches,userMatch,status:season.status,allSimulated,totalMatchdays:season.totalMatchdays});
   } catch(err){res.status(500).json({error:err.message});}
 });
 
@@ -376,10 +412,7 @@ app.post('/api/matches/simulate', auth, requireClub, async(req,res)=>{
       else if(ug<og) await createNotification(req.user.id,'match_loss','Defeat',`You lost to ${oppName} ${ug}-${og}`);
       else await createNotification(req.user.id,'match_draw','Draw',`You drew with ${oppName} ${ug}-${og}`);
     }
-    const enriched=await Promise.all(results.map(async r=>{
-      const [h,a]=await Promise.all([db.collection('clubs').doc(r.homeTeamId).get(),db.collection('clubs').doc(r.awayTeamId).get()]);
-      return{...r,homeName:h.data()?.name,homeShort:h.data()?.shortName,awayName:a.data()?.name,awayShort:a.data()?.shortName};
-    }));
+    const enriched=await Promise.all(results.map(async r=>enrichMatch(r)));
     res.json({matchday:season.currentMatchday,results:enriched,userResult,standings,canAdvance:true});
   } catch(err){res.status(500).json({error:err.message});}
 });
@@ -389,11 +422,40 @@ app.post('/api/matches/advance', auth, requireClub, async(req,res)=>{
     const db=getDb();
     const success=await advanceMatchday();
     if(!success) return res.json({message:'Season finished!',finished:true,standings:await getStandings()});
-    const squadSnap=await db.collection('players').where('clubId','==',req.user.clubId).get();
-    const totalWages=squadSnap.docs.reduce((s,d)=>s+d.data().salary,0);
-    await db.collection('clubs').doc(req.user.clubId).update({balance:admin.firestore.FieldValue.increment(-totalWages)});
     const season=await getSeason();
     res.json({message:`Advanced to matchday ${season.currentMatchday}`,matchday:season.currentMatchday,season});
+  } catch(err){res.status(500).json({error:err.message});}
+});
+
+// ─── Match Status (for auto-sim polling) ─────────────────────────────────────
+app.get('/api/matches/status', auth, requireClub, async(req,res)=>{
+  try {
+    const season = await getSeason();
+    if (!season) return res.json({status:'initializing'});
+    const db = getDb();
+    const unsimSnap = await db.collection('matches')
+      .where('matchday','==',season.currentMatchday)
+      .where('simulated','==',false).get();
+    const allSimulated = unsimSnap.empty;
+    // Get user's match for this matchday
+    const matchSnap = await db.collection('matches')
+      .where('matchday','==',season.currentMatchday).get();
+    const userMatchDoc = matchSnap.docs.find(d => {
+      const m = d.data();
+      return m.homeTeamId === req.user.clubId || m.awayTeamId === req.user.clubId;
+    });
+    let userMatch = null;
+    if (userMatchDoc) {
+      userMatch = await enrichMatch({id:userMatchDoc.id,...userMatchDoc.data()});
+    }
+    res.json({
+      seasonNumber: season.seasonNumber,
+      currentMatchday: season.currentMatchday,
+      totalMatchdays: season.totalMatchdays,
+      status: season.status,
+      allSimulated,
+      userMatch,
+    });
   } catch(err){res.status(500).json({error:err.message});}
 });
 
@@ -404,8 +466,7 @@ app.get('/api/matches/history', auth, requireClub, async(req,res)=>{
     const matches=(await Promise.all(snap.docs.map(async d=>{
       const m={id:d.id,...d.data()};
       if(m.homeTeamId!==req.user.clubId&&m.awayTeamId!==req.user.clubId) return null;
-      const [h,a]=await Promise.all([db.collection('clubs').doc(m.homeTeamId).get(),db.collection('clubs').doc(m.awayTeamId).get()]);
-      return{...m,homeName:h.data()?.name,homeShort:h.data()?.shortName,awayName:a.data()?.name,awayShort:a.data()?.shortName};
+      return enrichMatch(m);
     }))).filter(Boolean);
     res.json({matches});
   } catch(err){res.status(500).json({error:err.message});}
@@ -418,16 +479,16 @@ app.get('/api/matches/report/:id', auth, async(req,res)=>{
     const doc=await db.collection('matches').doc(req.params.id).get();
     if(!doc.exists) return res.status(404).json({error:'Match not found'});
     const m={id:doc.id,...doc.data()};
-    const [h,a]=await Promise.all([
-      db.collection('clubs').doc(m.homeTeamId).get(),
-      db.collection('clubs').doc(m.awayTeamId).get(),
+    const [home,away]=await Promise.all([
+      resolveClubName(m.homeTeamId),
+      resolveClubName(m.awayTeamId),
     ]);
     const match={
       ...m,
-      homeName:h.data()?.name||'Home',
-      homeShort:h.data()?.shortName||'HOM',
-      awayName:a.data()?.name||'Away',
-      awayShort:a.data()?.shortName||'AWY',
+      homeName:home.name,
+      homeShort:home.shortName,
+      awayName:away.name,
+      awayShort:away.shortName,
     };
     const events=Array.isArray(m.events)?m.events:[];
     const stats={
@@ -566,7 +627,7 @@ app.get('*',(req,res)=>{
 let initialized=false;
 async function bootstrap(){
   if(!initialized){
-    try{await initializeGame();initialized=true;}
+    try{await initializeGame();initialized=true;startAutoSimulation();}
     catch(err){console.error('Init error:',err.message);}
   }
 }

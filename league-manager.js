@@ -29,18 +29,29 @@ const CLUB_DATA = [
 ];
 
 function generateFixtures(teamIds) {
-  const n = teamIds.length, fixtures = [], teams = [...teamIds], half = n/2;
+  const n = teamIds.length, fixtures = [], teams = [...teamIds], half = Math.floor(n/2);
+  // First leg
   for(let r=0;r<n-1;r++){
     const md=r+1;
     for(let i=0;i<half;i++){
       const h=teams[i],a=teams[n-1-i];
+      // Safety: never let a club play itself
+      if(h===a) continue;
       fixtures.push(r%2===0?{matchday:md,homeTeamId:h,awayTeamId:a}:{matchday:md,homeTeamId:a,awayTeamId:h});
     }
     teams.splice(1,0,teams.pop());
   }
+  // Second leg (reverse home/away)
   const off=n-1;
-  for(const f of [...fixtures]) fixtures.push({matchday:f.matchday+off,homeTeamId:f.awayTeamId,awayTeamId:f.homeTeamId});
-  return fixtures;
+  const firstLeg=[...fixtures];
+  for(const f of firstLeg){
+    // Safety check again for reverse leg
+    if(f.homeTeamId===f.awayTeamId) continue;
+    fixtures.push({matchday:f.matchday+off,homeTeamId:f.awayTeamId,awayTeamId:f.homeTeamId});
+  }
+  // Validate: no self-play, no duplicate fixtures on same matchday
+  const validated = fixtures.filter(f => f.homeTeamId && f.awayTeamId && f.homeTeamId !== f.awayTeamId);
+  return validated;
 }
 
 async function getStandings() {
@@ -276,6 +287,10 @@ async function startNewSeason() {
   for(const p of market) await insertPlayer(p);
 }
 
+function rand(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 function clamp(val, min, max) {
   return Math.max(min, Math.min(max, val));
 }
@@ -382,4 +397,97 @@ async function createUserClub(userId, clubName, stadium, city) {
   return weakest.id;
 }
 
-module.exports = {initializeGame,createUserClub,generateFixtures,getStandings,getSeason,advanceMatchday,getCurrentMatchdayFixtures,simulateMatchday,aiTransferActions,CLUB_DATA};
+// ─── Auto-Simulation ───────────────────────────────────────────────────────
+let autoSimTimer = null;
+let autoAdvanceTimer = null;
+let justAdvanced = false;
+const AUTO_SIM_INTERVAL = 20000;   // 20s between auto-sim checks
+const AUTO_ADVANCE_DELAY = 30000;  // 30s after all matches simulated before advancing
+
+function startAutoSimulation() {
+  if (autoSimTimer) return;
+  console.log('[AutoSim] Starting auto-simulation loop');
+  autoSimTimer = setInterval(autoSimTick, AUTO_SIM_INTERVAL);
+  // Run first tick after a short delay to let initialization finish
+  setTimeout(autoSimTick, 3000);
+}
+
+function stopAutoSimulation() {
+  if (autoSimTimer) { clearInterval(autoSimTimer); autoSimTimer = null; }
+  if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
+  console.log('[AutoSim] Stopped auto-simulation loop');
+}
+
+async function autoSimTick() {
+  try {
+    // Skip one tick after advancing to give player time to manage
+    if (justAdvanced) { justAdvanced = false; return; }
+
+    const season = await getSeason();
+    if (!season || season.status === 'finished') return;
+
+    const db = getDb();
+    const unsimSnap = await db.collection('matches')
+      .where('matchday', '==', season.currentMatchday)
+      .where('simulated', '==', false).get();
+
+    if (!unsimSnap.empty) {
+      console.log(`[AutoSim] Simulating matchday ${season.currentMatchday} (${unsimSnap.size} matches)`);
+      const results = await simulateMatchday(season.currentMatchday);
+      await aiTransferActions();
+      console.log(`[AutoSim] Matchday ${season.currentMatchday} complete`);
+
+      // Schedule auto-advance after a delay
+      if (autoAdvanceTimer) clearTimeout(autoAdvanceTimer);
+      autoAdvanceTimer = setTimeout(autoAdvanceTick, AUTO_ADVANCE_DELAY);
+    }
+  } catch (err) {
+    console.error('[AutoSim] Error in tick:', err.message);
+  }
+}
+
+async function autoAdvanceTick() {
+  try {
+    const season = await getSeason();
+    if (!season || season.status === 'finished') return;
+
+    // Check if all matches for current matchday are simulated
+    const db = getDb();
+    const unsimSnap = await db.collection('matches')
+      .where('matchday', '==', season.currentMatchday)
+      .where('simulated', '==', false).get();
+
+    if (!unsimSnap.empty) return; // Not ready yet
+
+    // Deduct wages for all user clubs
+    const userClubsSnap = await db.collection('clubs').where('isAi', '==', false).get();
+    for (const clubDoc of userClubsSnap.docs) {
+      const club = clubDoc.data();
+      if (!club.userId) continue;
+      const squadSnap = await db.collection('players').where('clubId', '==', clubDoc.id).get();
+      const totalWages = squadSnap.docs.reduce((s, d) => s + (d.data().salary || 0), 0);
+      if (totalWages > 0) {
+        await db.collection('clubs').doc(clubDoc.id).update({
+          balance: admin.firestore.FieldValue.increment(-totalWages)
+        });
+      }
+    }
+
+    const advanced = await advanceMatchday();
+    if (advanced) {
+      justAdvanced = true;
+      const newSeason = await getSeason();
+      console.log(`[AutoSim] Advanced to matchday ${newSeason.currentMatchday}`);
+    } else {
+      console.log('[AutoSim] Season finished!');
+    }
+  } catch (err) {
+    console.error('[AutoSim] Error advancing:', err.message);
+  }
+}
+
+module.exports = {
+  initializeGame, createUserClub, generateFixtures, getStandings, getSeason,
+  advanceMatchday, getCurrentMatchdayFixtures, simulateMatchday, aiTransferActions,
+  startAutoSimulation, stopAutoSimulation, autoSimTick, autoAdvanceTick, CLUB_DATA
+};

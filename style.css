@@ -1857,3 +1857,109 @@ tr.relegation td {
     font-size: 18px;
   }
 }
+
+/* ─── Season Progress Bar ─────────────────────────────────────────────────── */
+.season-progress {
+  margin-bottom: 12px;
+}
+
+.season-progress-bar {
+  height: 4px;
+  background: var(--bg-input);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.season-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--green-bright));
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.season-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* ─── Match Status Indicator ──────────────────────────────────────────────── */
+.match-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(26, 122, 90, 0.08);
+  border: 1px solid rgba(26, 122, 90, 0.2);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--green-bright);
+}
+
+.match-status-indicator .live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green-bright);
+  animation: pulse 1.5s infinite;
+}
+
+.match-status-indicator.simulated {
+  background: rgba(212, 168, 67, 0.08);
+  border-color: rgba(212, 168, 67, 0.2);
+  color: var(--gold);
+}
+
+.match-status-indicator.simulated .live-dot {
+  background: var(--gold);
+  animation: none;
+}
+
+/* ─── Form Guide ──────────────────────────────────────────────────────────── */
+.form-guide {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.form-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+  color: white;
+}
+
+.form-dot.w { background: var(--green-light); }
+.form-dot.d { background: var(--gold); color: #1a1a1a; }
+.form-dot.l { background: var(--red); }
+
+/* ─── Auto-play notice ────────────────────────────────────────────────────── */
+.autoplay-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(26, 122, 90, 0.06);
+  border: 1px dashed rgba(26, 122, 90, 0.3);
+  border-radius: var(--radius);
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.autoplay-notice .spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}

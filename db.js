@@ -108,17 +108,20 @@ class LocalCollection {
 
   where(field, op, value) {
     const collection = this;
-    const results = Object.entries(this.docs)
-      .filter(([id, doc]) => {
-        if (op === '==') return doc[field] === value;
-        if (op === '!=') return doc[field] !== value;
-        if (op === '<') return doc[field] < value;
-        if (op === '<=') return doc[field] <= value;
-        if (op === '>') return doc[field] > value;
-        if (op === '>=') return doc[field] >= value;
-        return true;
-      })
-      .map(([id, doc]) => {
+    const filterFn = (doc) => {
+      if (op === '==') return doc[field] === value;
+      if (op === '!=') return doc[field] !== value;
+      if (op === '<') return doc[field] < value;
+      if (op === '<=') return doc[field] <= value;
+      if (op === '>') return doc[field] > value;
+      if (op === '>=') return doc[field] >= value;
+      return true;
+    };
+    const initialResults = Object.entries(this.docs)
+      .filter(([id, doc]) => filterFn(doc));
+
+    const makeSnapshot = (entries) => {
+      const results = entries.map(([id, doc]) => {
         const docRef = collection.doc(id);
         return {
           id,
@@ -126,44 +129,65 @@ class LocalCollection {
           ref: docRef
         };
       });
-    
-    const querySnapshot = {
-      docs: results,
-      empty: results.length === 0,
-      size: results.length,
-      // Allow chaining with orderBy
-      orderBy: function(field, direction = 'asc') {
-        const sorted = [...results].sort((a, b) => {
-          const aVal = a.data()[field];
-          const bVal = b.data()[field];
-          if (direction === 'asc') return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-          return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
-        });
-        return {
-          docs: sorted,
-          empty: sorted.length === 0,
-          size: sorted.length,
-          limit: function(n) {
+
+      const snapshot = {
+        docs: results,
+        empty: results.length === 0,
+        size: results.length,
+        where: function(field2, op2, value2) {
+          const filtered = entries.filter(([id, doc]) => {
+            if (op2 === '==') return doc[field2] === value2;
+            if (op2 === '!=') return doc[field2] !== value2;
+            if (op2 === '<') return doc[field2] < value2;
+            if (op2 === '<=') return doc[field2] <= value2;
+            if (op2 === '>') return doc[field2] > value2;
+            if (op2 === '>=') return doc[field2] >= value2;
+            return true;
+          });
+          return makeSnapshot(filtered);
+        },
+        orderBy: function(field, direction = 'asc') {
+          const sorted = [...entries].sort((a, b) => {
+            const aVal = a[1][field];
+            const bVal = b[1][field];
+            if (direction === 'asc') return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+            return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+          });
+          const sortedResults = sorted.map(([id, doc]) => {
+            const docRef = collection.doc(id);
             return {
-              docs: sorted.slice(0, n),
-              empty: sorted.length === 0
+              id,
+              data: function() { return JSON.parse(JSON.stringify(doc)); },
+              ref: docRef
             };
-          },
-          get: async function() { return this; }
-        };
-      },
-      limit: function(n) {
-        return {
-          docs: results.slice(0, n),
-          empty: results.length === 0,
-          get: async function() { return this; }
-        };
-      },
-      // Allow calling get() to return the snapshot
-      get: async function() { return querySnapshot; }
+          });
+          return {
+            docs: sortedResults,
+            empty: sortedResults.length === 0,
+            size: sortedResults.length,
+            limit: function(n) {
+              return {
+                docs: sortedResults.slice(0, n),
+                empty: sortedResults.length === 0,
+                get: async function() { return this; }
+              };
+            },
+            get: async function() { return this; }
+          };
+        },
+        limit: function(n) {
+          return {
+            docs: results.slice(0, n),
+            empty: results.length === 0,
+            get: async function() { return this; }
+          };
+        },
+        get: async function() { return snapshot; }
+      };
+      return snapshot;
     };
-    
-    return querySnapshot;
+
+    return makeSnapshot(initialResults);
   }
 
   orderBy(field, direction = 'asc') {
