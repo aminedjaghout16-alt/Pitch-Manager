@@ -1,7 +1,4 @@
-const { getDb, useLocalDB, FieldValue } = require('./db');
-
-// Use FieldValue from db module for local dev, or firebase-admin for production
-const admin = useLocalDB ? { firestore: { FieldValue } } : require('firebase-admin');
+const { query, queryAll, queryOne, transaction } = require('./db');
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const MENTALITY_MOD = {defensive:0.85,counter:0.92,balanced:1.0,attacking:1.08,'all-out':1.15};
@@ -36,88 +33,76 @@ function poisson(lambda){
 
 // ─── Team Strength Calculation ──────────────────────────────────────────────
 async function getTeamStrength(clubId){
-  const db=getDb();
-  const [clubDoc,squadSnap]=await Promise.all([
-    db.collection('clubs').doc(clubId).get(),
-    db.collection('players').where('clubId','==',clubId).get()
+  const [club, players] = await Promise.all([
+    queryOne('SELECT * FROM clubs WHERE id=$1', [clubId]),
+    queryAll('SELECT * FROM players WHERE club_id=$1', [clubId])
   ]);
-  const club=clubDoc.data();
-  const players=squadSnap.docs.map(d=>({id:d.id,...d.data()}));
   
-  if(players.length===0) return {attack:50,defense:50,midfield:50,avgOvr:50,players:[]};
+  if(!club || players.length===0) return {attack:50,defense:50,midfield:50,avgOvr:50,players:[],homeAdv:1.08};
 
-  const tactics=club.tactics||null;
-  const best11=tactics&&tactics.lineup&&Object.keys(tactics.lineup).length>=7
-    ? selectFromLineup(players,tactics)
+  const tactics = club.tactics || null;
+  const best11 = tactics && tactics.lineup && Object.keys(tactics.lineup).length>=7
+    ? selectFromLineup(players, tactics)
     : selectBest11(players);
 
-  const avgOvr=best11.reduce((s,p)=>s+p.ovr,0)/best11.length;
-  const avgMorale=best11.reduce((s,p)=>s+(p.morale||70),0)/best11.length/100;
-  const avgFitness=best11.reduce((s,p)=>s+(p.fitness||80),0)/best11.length/100;
+  const avgOvr = best11.reduce((s,p)=>s+p.ovr,0)/best11.length;
+  const avgMorale = best11.reduce((s,p)=>s+(p.morale||70),0)/best11.length/100;
+  const avgFitness = best11.reduce((s,p)=>s+(p.fitness||80),0)/best11.length/100;
 
-  // Calculate unit strengths
-  const attack=calcUnit(best11,['ST','LW','RW','CAM'],['shooting','pace']);
-  const midfield=calcUnit(best11,['CM','CDM','CAM'],['passing','defending']);
-  const defense=calcUnit(best11,['CB','LB','RB','GK'],['defending','physical']);
+  const attack = calcUnit(best11,['ST','LW','RW','CAM'],['shooting','pace']);
+  const midfield = calcUnit(best11,['CM','CDM','CAM'],['passing','defending']);
+  const defense = calcUnit(best11,['CB','LB','RB','GK'],['defending','physical']);
 
-  // Morale and fitness modifiers
-  const moraleMod=0.8+avgMorale*0.4; // 0.8 to 1.2
-  const fitnessMod=0.9+avgFitness*0.2; // 0.9 to 1.1
+  const moraleMod = 0.8+avgMorale*0.4;
+  const fitnessMod = 0.9+avgFitness*0.2;
 
-  // Tactics modifiers
-  let attackMod=1.0,defenseMod=1.0,midMod=1.0;
+  let attackMod=1.0, defenseMod=1.0, midMod=1.0;
   if(tactics){
-    const mentMod=MENTALITY_MOD[tactics.mentality]||1.0;
-    const pressMod=PRESSING_MOD[tactics.pressing]||1.0;
-    const tempMod=TEMPO_MOD[tactics.tempo]||1.0;
-    attackMod=mentMod*tempMod;
-    defenseMod=(2-mentMod)*pressMod;
-    midMod=pressMod*tempMod;
+    const mentMod = MENTALITY_MOD[tactics.mentality]||1.0;
+    const pressMod = PRESSING_MOD[tactics.pressing]||1.0;
+    const tempMod = TEMPO_MOD[tactics.tempo]||1.0;
+    attackMod = mentMod*tempMod;
+    defenseMod = (2-mentMod)*pressMod;
+    midMod = pressMod*tempMod;
   }
 
-  // Home advantage (applied later in match context)
-  const homeAdv=1.08;
-
   return {
-    attack:attack*moraleMod*fitnessMod*attackMod,
-    midfield:midfield*moraleMod*fitnessMod*midMod,
-    defense:defense*moraleMod*fitnessMod*defenseMod,
-    avgOvr:avgOvr*moraleMod*fitnessMod,
-    players:best11,
-    homeAdv
+    attack: attack*moraleMod*fitnessMod*attackMod,
+    midfield: midfield*moraleMod*fitnessMod*midMod,
+    defense: defense*moraleMod*fitnessMod*defenseMod,
+    avgOvr: avgOvr*moraleMod*fitnessMod,
+    players: best11,
+    homeAdv: 1.08
   };
 }
 
-function calcUnit(players,positions,attrs){
-  const pp=players.filter(p=>positions.includes(p.position));
-  if(!pp.length)return 50;
-  return pp.reduce((s,p)=>s+attrs.reduce((a,k)=>a+(p[k]||50),0)/attrs.length,0)/pp.length;
+function calcUnit(players, positions, attrs){
+  const pp = players.filter(p => positions.includes(p.position));
+  if(!pp.length) return 50;
+  return pp.reduce((s,p) => s + attrs.reduce((a,k) => a+(p[k]||50),0)/attrs.length, 0)/pp.length;
 }
 
 // ─── Lineup Selection ───────────────────────────────────────────────────────
-function selectFromLineup(players,tactics){
-  const lineup=tactics.lineup;
-  const selected=[];
-  const used=new Set();
+function selectFromLineup(players, tactics){
+  const lineup = tactics.lineup;
+  const selected = [];
+  const used = new Set();
   
-  // First, add players from lineup
-  for(const [slotIdx,playerId] of Object.entries(lineup)){
-    const p=players.find(pl=>pl.id===playerId);
-    if(p&&!used.has(p.id)){
-      // Check if player is available (not injured/suspended)
-      if(!p.injuryType&&!p.suspended){
+  for(const [slotIdx, playerId] of Object.entries(lineup)){
+    const p = players.find(pl => String(pl.id) === String(playerId));
+    if(p && !used.has(p.id)){
+      if(!p.injury_type && !p.suspended){
         selected.push(p);
         used.add(p.id);
       }
     }
   }
   
-  // Fill remaining slots with best available
-  if(selected.length<11){
-    players.filter(p=>!used.has(p.id)&&!p.injuryType&&!p.suspended)
-      .sort((a,b)=>b.ovr-a.ovr)
-      .forEach(p=>{
-        if(selected.length<11){selected.push(p);used.add(p.id);}
+  if(selected.length < 11){
+    players.filter(p => !used.has(p.id) && !p.injury_type && !p.suspended)
+      .sort((a,b) => b.ovr - a.ovr)
+      .forEach(p => {
+        if(selected.length < 11){ selected.push(p); used.add(p.id); }
       });
   }
   
@@ -125,233 +110,228 @@ function selectFromLineup(players,tactics){
 }
 
 function selectBest11(players){
-  const formation={GK:1,CB:2,LB:1,RB:1,CDM:1,CM:2,LW:1,RW:1,ST:1};
-  const selected=[],used=new Set();
+  const formation = {GK:1,CB:2,LB:1,RB:1,CDM:1,CM:2,LW:1,RW:1,ST:1};
+  const selected = [], used = new Set();
   
-  // Select by position
-  for(const [pos,count] of Object.entries(formation)){
-    players.filter(p=>p.position===pos&&!used.has(p.id)&&!p.injuryType&&!p.suspended)
-      .sort((a,b)=>b.ovr-a.ovr)
-      .slice(0,count)
-      .forEach(p=>{selected.push(p);used.add(p.id);});
+  for(const [pos, count] of Object.entries(formation)){
+    players.filter(p => p.position===pos && !used.has(p.id) && !p.injury_type && !p.suspended)
+      .sort((a,b) => b.ovr - a.ovr)
+      .slice(0, count)
+      .forEach(p => { selected.push(p); used.add(p.id); });
   }
   
-  // Fill remaining with best available
-  players.filter(p=>!used.has(p.id)&&!p.injuryType&&!p.suspended)
-    .sort((a,b)=>b.ovr-a.ovr)
-    .forEach(p=>{if(selected.length<11){selected.push(p);used.add(p.id);}});
+  players.filter(p => !used.has(p.id) && !p.injury_type && !p.suspended)
+    .sort((a,b) => b.ovr - a.ovr)
+    .forEach(p => { if(selected.length < 11){ selected.push(p); used.add(p.id); }});
   
   return selected.slice(0,11);
 }
 
 // ─── Match Simulation ───────────────────────────────────────────────────────
-async function simulateMatch(homeId,awayId){
-  const [homeStrength,awayStrength]=await Promise.all([
+async function simulateMatch(homeId, awayId){
+  const [homeStrength, awayStrength] = await Promise.all([
     getTeamStrength(homeId),
     getTeamStrength(awayId)
   ]);
 
-  const homePlayers=homeStrength.players;
-  const awayPlayers=awayStrength.players;
+  const homePlayers = homeStrength.players;
+  const awayPlayers = awayStrength.players;
 
-  if(homePlayers.length===0||awayPlayers.length===0){
-    return {homeGoals:0,awayGoals:0,events:[],homePlayers,awayPlayers};
+  if(homePlayers.length===0 || awayPlayers.length===0){
+    return {homeGoals:0, awayGoals:0, events:[], homePlayers, awayPlayers, stats:{}};
   }
 
-  // Calculate expected goals based on team strengths
-  // Home team has advantage
-  const homeAttack=homeStrength.attack*homeStrength.homeAdv;
-  const awayAttack=awayStrength.attack;
-  const homeDefense=homeStrength.defense*homeStrength.homeAdv;
-  const awayDefense=awayStrength.defense;
+  const homeAttack = homeStrength.attack * homeStrength.homeAdv;
+  const awayAttack = awayStrength.attack;
+  const homeDefense = homeStrength.defense * homeStrength.homeAdv;
+  const awayDefense = awayStrength.defense;
 
-  // Expected goals (lambda for Poisson)
-  const homeLambda=clamp((homeAttack*1.1)/(awayDefense*0.9)*1.3,0.3,4.0);
-  const awayLambda=clamp((awayAttack*1.0)/(homeDefense*1.0)*1.0,0.2,3.5);
+  const homeLambda = clamp((homeAttack*1.1)/(awayDefense*0.9)*1.3, 0.3, 4.0);
+  const awayLambda = clamp((awayAttack*1.0)/(homeDefense*1.0)*1.0, 0.2, 3.5);
 
-  // Generate actual goals
-  const homeGoals=poisson(homeLambda);
-  const awayGoals=poisson(awayLambda);
+  const homeGoals = poisson(homeLambda);
+  const awayGoals = poisson(awayLambda);
 
-  // Generate events
-  const events=[];
+  const events = [];
   
-  // Goal events
-  for(let i=0;i<homeGoals;i++){
-    const minute=rand(1,90);
-    const scorer=pickScorer(homePlayers);
-    const assister=pickAssister(homePlayers,scorer);
+  for(let i=0; i<homeGoals; i++){
+    const minute = rand(1,90);
+    const scorer = pickScorer(homePlayers);
+    const assister = pickAssister(homePlayers, scorer);
     events.push({
-      type:'goal',team:'home',minute,
-      player:scorer?`${scorer.firstName} ${scorer.lastName}`:'Unknown',
-      playerId:scorer?.id,
-      assist:assister?`${assister.firstName} ${assister.lastName}`:null,
-      assistId:assister?.id
+      type:'goal', team:'home', minute,
+      player: scorer ? `${scorer.first_name} ${scorer.last_name}` : 'Unknown',
+      playerId: scorer?.id,
+      assist: assister ? `${assister.first_name} ${assister.last_name}` : null,
+      assistId: assister?.id
     });
   }
   
-  for(let i=0;i<awayGoals;i++){
-    const minute=rand(1,90);
-    const scorer=pickScorer(awayPlayers);
-    const assister=pickAssister(awayPlayers,scorer);
+  for(let i=0; i<awayGoals; i++){
+    const minute = rand(1,90);
+    const scorer = pickScorer(awayPlayers);
+    const assister = pickAssister(awayPlayers, scorer);
     events.push({
-      type:'goal',team:'away',minute,
-      player:scorer?`${scorer.firstName} ${scorer.lastName}`:'Unknown',
-      playerId:scorer?.id,
-      assist:assister?`${assister.firstName} ${assister.lastName}`:null,
-      assistId:assister?.id
+      type:'goal', team:'away', minute,
+      player: scorer ? `${scorer.first_name} ${scorer.last_name}` : 'Unknown',
+      playerId: scorer?.id,
+      assist: assister ? `${assister.first_name} ${assister.last_name}` : null,
+      assistId: assister?.id
     });
   }
 
-  // Yellow cards (more likely in high-tempo matches)
-  const homeYellows=rand(0,3);
-  const awayYellows=rand(0,3);
+  const homeYellows = rand(0,3);
+  const awayYellows = rand(0,3);
   
-  for(let i=0;i<homeYellows;i++){
-    const p=pickRandom(homePlayers);
+  for(let i=0; i<homeYellows; i++){
+    const p = pickRandom(homePlayers);
     if(p) events.push({
-      type:'yellow',team:'home',minute:rand(1,90),
-      player:`${p.firstName} ${p.lastName}`,playerId:p.id
+      type:'yellow', team:'home', minute:rand(1,90),
+      player:`${p.first_name} ${p.last_name}`, playerId:p.id
     });
   }
   
-  for(let i=0;i<awayYellows;i++){
-    const p=pickRandom(awayPlayers);
+  for(let i=0; i<awayYellows; i++){
+    const p = pickRandom(awayPlayers);
     if(p) events.push({
-      type:'yellow',team:'away',minute:rand(1,90),
-      player:`${p.firstName} ${p.lastName}`,playerId:p.id
+      type:'yellow', team:'away', minute:rand(1,90),
+      player:`${p.first_name} ${p.last_name}`, playerId:p.id
     });
   }
 
-  // Red cards (rare)
-  if(Math.random()<0.08){
-    const team=Math.random()<0.5?'home':'away';
-    const players=team==='home'?homePlayers:awayPlayers;
-    const p=pickRandom(players);
+  if(Math.random() < 0.08){
+    const team = Math.random() < 0.5 ? 'home' : 'away';
+    const players = team==='home' ? homePlayers : awayPlayers;
+    const p = pickRandom(players);
     if(p) events.push({
-      type:'red',team,minute:rand(20,90),
-      player:`${p.firstName} ${p.lastName}`,playerId:p.id
+      type:'red', team, minute:rand(20,90),
+      player:`${p.first_name} ${p.last_name}`, playerId:p.id
     });
   }
 
-  // Injuries during match (small chance per player)
-  const allPlayers=[...homePlayers,...awayPlayers];
+  // Injuries during match
+  const allPlayers = [...homePlayers, ...awayPlayers];
   for(const p of allPlayers){
-    if(Math.random()<0.03){ // 3% chance per player
-      const injury=weightedPick(INJURY_TYPES);
-      const weeks=rand(injury.weeks[0],injury.weeks[1]);
+    if(Math.random() < 0.03){
+      const injury = weightedPick(INJURY_TYPES);
+      const weeks = rand(injury.weeks[0], injury.weeks[1]);
       events.push({
-        type:'injury',team:p.team||'home',minute:rand(1,90),
-        player:`${p.firstName} ${p.lastName}`,playerId:p.id,
-        injuryType:injury.type,injuryWeeks:weeks
+        type:'injury', team: p.team||'home', minute:rand(1,90),
+        player:`${p.first_name} ${p.last_name}`, playerId:p.id,
+        injuryType: injury.type, injuryWeeks: weeks
       });
     }
   }
 
-  // Sort events by minute
-  events.sort((a,b)=>a.minute-b.minute);
+  events.sort((a,b) => a.minute - b.minute);
 
-  // Calculate match stats
-  const homePoss=rand(35,65);
-  const awayPoss=100-homePoss;
-  const homeShots=rand(5,20);
-  const awayShots=rand(5,20);
+  const homePoss = rand(35,65);
+  const awayPoss = 100 - homePoss;
+  const homeShots = rand(5,20);
+  const awayShots = rand(5,20);
 
   return {
-    homeGoals,awayGoals,events,
-    homePlayers,awayPlayers,
-    stats:{
-      homePossession:homePoss,
-      awayPossession:awayPoss,
-      homeShots,awayShots,
-      homeShotsOnTarget:Math.min(homeShots,rand(2,homeGoals+3)),
-      awayShotsOnTarget:Math.min(awayShots,rand(2,awayGoals+3)),
-      homeCorners:rand(2,10),awayCorners:rand(2,10),
-      homeFouls:rand(8,18),awayFouls:rand(8,18)
+    homeGoals, awayGoals, events,
+    homePlayers, awayPlayers,
+    stats: {
+      homePossession: homePoss,
+      awayPossession: awayPoss,
+      homeShots, awayShots,
+      homeShotsOnTarget: Math.min(homeShots, rand(2, homeGoals+3)),
+      awayShotsOnTarget: Math.min(awayShots, rand(2, awayGoals+3)),
+      homeCorners: rand(2,10), awayCorners: rand(2,10),
+      homeFouls: rand(8,18), awayFouls: rand(8,18)
     }
   };
 }
 
 function pickScorer(players){
-  // Prefer attackers
-  const pool=players.filter(p=>['ST','LW','RW','CAM','CM'].includes(p.position));
-  const candidates=pool.length>0?pool:players;
+  const pool = players.filter(p => ['ST','LW','RW','CAM','CM'].includes(p.position));
+  const candidates = pool.length > 0 ? pool : players;
   
-  // Weight by shooting attribute
-  const weights=candidates.map(p=>{
-    const shooting=p.shooting||50;
-    const form=(p.form||70)/100;
-    const morale=(p.morale||70)/100;
-    return shooting*form*morale;
+  const weights = candidates.map(p => {
+    const shooting = p.shooting || 50;
+    const form = (p.form || 70) / 100;
+    const morale = (p.morale || 70) / 100;
+    return shooting * form * morale;
   });
   
-  const total=weights.reduce((a,b)=>a+b,0);
-  let r=Math.random()*total;
-  for(let i=0;i<candidates.length;i++){
-    r-=weights[i];
-    if(r<=0)return candidates[i];
+  const total = weights.reduce((a,b) => a+b, 0);
+  let r = Math.random() * total;
+  for(let i=0; i<candidates.length; i++){
+    r -= weights[i];
+    if(r <= 0) return candidates[i];
   }
   return candidates[candidates.length-1];
 }
 
-function pickAssister(players,scorer){
-  const candidates=players.filter(p=>
-    p.id!==scorer?.id&&
+function pickAssister(players, scorer){
+  const candidates = players.filter(p =>
+    p.id !== scorer?.id &&
     ['CM','CAM','LW','RW','ST','LB','RB'].includes(p.position)
   );
-  if(!candidates.length)return null;
+  if(!candidates.length) return null;
   
-  // Weight by passing attribute
-  const weights=candidates.map(p=>{
-    const passing=p.passing||50;
-    const form=(p.form||70)/100;
-    return passing*form;
+  const weights = candidates.map(p => {
+    const passing = p.passing || 50;
+    const form = (p.form || 70) / 100;
+    return passing * form;
   });
   
-  const total=weights.reduce((a,b)=>a+b,0);
-  let r=Math.random()*total;
-  for(let i=0;i<candidates.length;i++){
-    r-=weights[i];
-    if(r<=0)return candidates[i];
+  const total = weights.reduce((a,b) => a+b, 0);
+  let r = Math.random() * total;
+  for(let i=0; i<candidates.length; i++){
+    r -= weights[i];
+    if(r <= 0) return candidates[i];
   }
   return candidates[candidates.length-1];
 }
 
 function pickRandom(players){
-  return players.length>0?players[Math.floor(Math.random()*players.length)]:null;
+  return players.length > 0 ? players[Math.floor(Math.random()*players.length)] : null;
 }
 
 // ─── Matchday Simulation ────────────────────────────────────────────────────
 async function simulateMatchday(matchday){
-  const db=getDb();
-  const snap=await db.collection('matches')
-    .where('matchday','==',matchday)
-    .where('simulated','==',false)
-    .get();
+  const unsimMatches = await queryAll(`
+    SELECT * FROM matches WHERE matchday=$1 AND simulated=FALSE
+  `, [matchday]);
   
-  const results=[];
+  const results = [];
 
-  for(const doc of snap.docs){
-    const match={id:doc.id,...doc.data()};
-    const result=await simulateMatch(match.homeTeamId,match.awayTeamId);
+  for(const match of unsimMatches){
+    const result = await simulateMatch(match.home_team_id, match.away_team_id);
     
     // Update match document
-    await doc.ref.update({
-      homeGoals:result.homeGoals,
-      awayGoals:result.awayGoals,
-      simulated:true,
-      events:result.events,
-      ...result.stats,
-      playedAt:new Date().toISOString()
-    });
+    await query(`
+      UPDATE matches SET
+        home_goals=$1, away_goals=$2, simulated=TRUE,
+        events=$3,
+        home_possession=$4, away_possession=$5,
+        home_shots=$6, away_shots=$7,
+        home_shots_on_target=$8, away_shots_on_target=$9,
+        home_corners=$10, away_corners=$11,
+        home_fouls=$12, away_fouls=$13,
+        played_at=NOW()
+      WHERE id=$14
+    `, [
+      result.homeGoals, result.awayGoals,
+      JSON.stringify(result.events),
+      result.stats.homePossession, result.stats.awayPossession,
+      result.stats.homeShots, result.stats.awayShots,
+      result.stats.homeShotsOnTarget, result.stats.awayShotsOnTarget,
+      result.stats.homeCorners, result.stats.awayCorners,
+      result.stats.homeFouls, result.stats.awayFouls,
+      match.id
+    ]);
 
     // Update player stats
     await updatePlayerStats(result);
 
     results.push({
-      matchId:match.id,
-      homeTeamId:match.homeTeamId,
-      awayTeamId:match.awayTeamId,
+      matchId: match.id,
+      homeTeamId: match.home_team_id,
+      awayTeamId: match.away_team_id,
       ...result
     });
   }
@@ -361,77 +341,108 @@ async function simulateMatchday(matchday){
 
 // ─── Player Stats Update ────────────────────────────────────────────────────
 async function updatePlayerStats(result){
-  const db=getDb();
-  const batch=db.batch();
-  const stats={};
+  const stats = {};
 
-  // Process events
   for(const e of result.events){
-    if(!e.playerId)continue;
+    if(!e.playerId) continue;
     
     if(!stats[e.playerId]){
-      stats[e.playerId]={goals:0,assists:0,yellows:0,reds:0,injury:null};
+      stats[e.playerId] = {goals:0, assists:0, yellows:0, reds:0, injury:null};
     }
     
-    if(e.type==='goal')stats[e.playerId].goals++;
-    else if(e.type==='yellow')stats[e.playerId].yellows++;
-    else if(e.type==='red')stats[e.playerId].reds++;
+    if(e.type==='goal') stats[e.playerId].goals++;
+    else if(e.type==='yellow') stats[e.playerId].yellows++;
+    else if(e.type==='red') stats[e.playerId].reds++;
     
-    if(e.type==='goal'&&e.assistId){
-      if(!stats[e.assistId])stats[e.assistId]={goals:0,assists:0,yellows:0,reds:0,injury:null};
+    if(e.type==='goal' && e.assistId){
+      if(!stats[e.assistId]) stats[e.assistId] = {goals:0, assists:0, yellows:0, reds:0, injury:null};
       stats[e.assistId].assists++;
     }
     
     if(e.type==='injury'){
-      stats[e.playerId].injury={type:e.injuryType,weeks:e.injuryWeeks};
+      stats[e.playerId].injury = {type: e.injuryType, weeks: e.injuryWeeks};
     }
   }
 
   // Update player documents
-  for(const [playerId,s] of Object.entries(stats)){
-    const ref=db.collection('players').doc(playerId);
-    const updates={
-      appearances:admin.firestore.FieldValue.increment(1),
-      goals:admin.firestore.FieldValue.increment(s.goals),
-      assists:admin.firestore.FieldValue.increment(s.assists),
-      yellowCards:admin.firestore.FieldValue.increment(s.yellows),
-      redCards:admin.firestore.FieldValue.increment(s.reds)
-    };
-    
-    // Apply injury
+  for(const [playerId, s] of Object.entries(stats)){
     if(s.injury){
-      updates.injuryType=s.injury.type;
-      updates.injuryWeeks=s.injury.weeks;
+      await query(`
+        UPDATE players SET
+          appearances = appearances + 1,
+          career_appearances = career_appearances + 1,
+          goals = goals + $1,
+          career_goals = career_goals + $2,
+          assists = assists + $3,
+          career_assists = career_assists + $4,
+          yellow_cards = yellow_cards + $5,
+          career_yellow_cards = career_yellow_cards + $6,
+          red_cards = red_cards + $7,
+          career_red_cards = career_red_cards + $8,
+          injury_type = $9,
+          injury_weeks = $10,
+          suspended = CASE WHEN $11 > 0 THEN TRUE ELSE suspended END
+        WHERE id = $12
+      `, [
+        s.goals, s.goals,
+        s.assists, s.assists,
+        s.yellows, s.yellows,
+        s.reds, s.reds,
+        s.injury.type, s.injury.weeks,
+        s.reds,
+        playerId
+      ]);
+    } else {
+      await query(`
+        UPDATE players SET
+          appearances = appearances + 1,
+          career_appearances = career_appearances + 1,
+          goals = goals + $1,
+          career_goals = career_goals + $2,
+          assists = assists + $3,
+          career_assists = career_assists + $4,
+          yellow_cards = yellow_cards + $5,
+          career_yellow_cards = career_yellow_cards + $6,
+          red_cards = red_cards + $7,
+          career_red_cards = career_red_cards + $8,
+          suspended = CASE WHEN $9 > 0 THEN TRUE ELSE suspended END
+        WHERE id = $10
+      `, [
+        s.goals, s.goals,
+        s.assists, s.assists,
+        s.yellows, s.yellows,
+        s.reds, s.reds,
+        s.reds,
+        playerId
+      ]);
     }
-    
-    // Suspension from red card or accumulated yellows
-    if(s.reds>0){
-      updates.suspended=true;
-    }
-    
-    batch.update(ref,updates);
   }
 
-  // Update fitness and form for all players who played
-  const allPlayerIds=new Set([
-    ...result.homePlayers.map(p=>p.id),
-    ...result.awayPlayers.map(p=>p.id)
+  // Update fitness for all players who played
+  const allPlayerIds = new Set([
+    ...result.homePlayers.map(p => p.id),
+    ...result.awayPlayers.map(p => p.id)
   ]);
 
   for(const playerId of allPlayerIds){
-    if(stats[playerId])continue; // Already processed
+    if(stats[playerId]) continue;
     
-    const ref=db.collection('players').doc(playerId);
-    batch.update(ref,{
-      appearances:admin.firestore.FieldValue.increment(1),
-      fitness:Math.max(50,(result.homePlayers.find(p=>p.id===playerId)?.fitness||80)-rand(3,8))
-    });
+    const player = result.homePlayers.find(p => p.id === playerId) || 
+                   result.awayPlayers.find(p => p.id === playerId);
+    const fitDrop = rand(3, 8);
+    const newFitness = Math.max(50, (player?.fitness || 80) - fitDrop);
+    
+    await query(`
+      UPDATE players SET
+        appearances = appearances + 1,
+        career_appearances = career_appearances + 1,
+        fitness = $1
+      WHERE id = $2
+    `, [newFitness, playerId]);
   }
-
-  await batch.commit();
 }
 
-module.exports={
+module.exports = {
   simulateMatch,
   simulateMatchday,
   getTeamStrength,

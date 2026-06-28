@@ -12,6 +12,7 @@ const state = {
   transferSort: { col: 'ovr', order: 'desc' },
   transferFilter: '',
   trainingFocus: 'general',
+  leaderboardTab: 'scorers',
   tacticsState: {
     formation: '4-4-2',
     mentality: 'balanced',
@@ -259,11 +260,13 @@ function updateSubNav(section) {
       { id: 'overview', label: 'Overview' },
       { id: 'formation', label: 'Formation' },
       { id: 'list', label: 'All Players' },
+      { id: 'injuries', label: 'Medical' },
     ],
     matches: [
       { id: 'next', label: 'Next Match' },
       { id: 'results', label: 'Results' },
       { id: 'league', label: 'League' },
+      { id: 'stats', label: 'Stats' },
     ],
     transfers: [
       { id: 'market', label: 'Market' },
@@ -275,6 +278,7 @@ function updateSubNav(section) {
       { id: 'finances', label: 'Finances' },
       { id: 'training', label: 'Training' },
       { id: 'tactics', label: 'Tactics' },
+      { id: 'awards', label: 'Awards' },
     ],
   };
 
@@ -533,6 +537,7 @@ async function renderSquadSection(container) {
   if (tab === 'overview') return renderSquadOverview(container);
   if (tab === 'formation') return renderFormation(container);
   if (tab === 'list') return renderSquadList(container);
+  if (tab === 'injuries') return renderInjuries(container);
 }
 
 async function renderSquadOverview(container) {
@@ -574,7 +579,7 @@ async function renderSquadOverview(container) {
           <div class="card-header">
             <span class="card-title">Star Player</span>
           </div>
-          <div class="player-card" onclick="showPlayerDetail(${topPlayer.id})">
+          <div class="player-card" onclick="showPlayerProfile('${topPlayer.id}')">
             <img class="player-card-avatar" src="${playerAvatarUrl(topPlayer)}" alt="">
             <div class="player-card-info">
               <div class="player-card-name">${topPlayer.firstName} ${topPlayer.lastName}</div>
@@ -610,7 +615,7 @@ async function renderSquadOverview(container) {
           <button class="btn btn-ghost btn-xs" onclick="switchSubTab('list')">View All</button>
         </div>
         ${players.slice(0, 5).map(p => `
-          <div class="player-card" onclick="showPlayerDetail(${p.id})">
+          <div class="player-card" onclick="showPlayerProfile('${p.id}')">
             <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
             <div class="player-card-info">
               <div class="player-card-name">${p.firstName} ${p.lastName}</div>
@@ -725,7 +730,7 @@ function drawFormation(container) {
   }).join('');
 
   const benchHtml = unassigned.slice(0, 8).map(p => `
-    <div class="player-card" style="padding:8px;margin-bottom:4px" onclick="showPlayerDetail(${p.id})">
+    <div class="player-card" style="padding:8px;margin-bottom:4px" onclick="showPlayerProfile('${p.id}')">
       <img class="player-card-avatar" style="width:32px;height:32px" src="${playerAvatarUrl(p)}" alt="">
       <div class="player-card-info">
         <div class="player-card-name" style="font-size:12px">${p.firstName} ${p.lastName}</div>
@@ -907,7 +912,7 @@ async function renderSquadList(container) {
       </div>
 
       ${data.players.map(p => `
-        <div class="player-card" onclick="showPlayerDetail(${p.id})">
+        <div class="player-card" onclick="showPlayerProfile('${p.id}')">
           <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
           <div class="player-card-info">
             <div class="player-card-name">${p.firstName} ${p.lastName}</div>
@@ -1011,6 +1016,7 @@ async function renderMatchesSection(container) {
   if (tab === 'next') return renderNextMatch(container);
   if (tab === 'results') return renderMatchResults(container);
   if (tab === 'league') return renderLeagueTable(container);
+  if (tab === 'stats') return renderLeaderboards(container);
 }
 
 function startMatchPolling() {
@@ -1191,7 +1197,7 @@ async function renderLeagueTable(container) {
       return `
         <tr class="${isUser ? 'highlight' : ''} ${isRelegation ? 'relegation' : ''}">
           <td style="font-weight:700">${s.position}</td>
-          <td style="color:var(--text-primary);font-weight:${isUser ? '700' : '500'}">${s.name}</td>
+          <td style="color:var(--text-primary);font-weight:${isUser ? '700' : '500'};cursor:pointer" onclick="showClubProfile('${s.clubId}')">${s.name}</td>
           <td>${s.played}</td>
           <td>${s.won}</td>
           <td>${s.drawn}</td>
@@ -1521,6 +1527,7 @@ async function renderClubSection(container) {
   if (tab === 'finances') return renderFinances(container);
   if (tab === 'training') return renderTraining(container);
   if (tab === 'tactics') return renderTacticsSettings(container);
+  if (tab === 'awards') return renderAwards(container);
 }
 
 async function renderClubOverview(container) {
@@ -1815,6 +1822,514 @@ async function showNotifications() {
   } catch (e) {
     showToast('Failed to load notifications', 'error');
   }
+}
+
+// ─── Injuries & Medical ──────────────────────────────────────────────────────
+async function renderInjuries(container) {
+  try {
+    const data = await api.get('/injuries');
+    const injured = data.injured || [];
+    const suspended = data.suspended || [];
+
+    container.innerHTML = `
+      <div class="section-header">
+        <div>
+          <div class="section-title">Medical Room</div>
+          <div class="section-subtitle">${injured.length} injured &middot; ${suspended.length} suspended</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Injured Players</span>
+          <span class="card-subtitle">${injured.length} out</span>
+        </div>
+        ${injured.length === 0 ? '<p class="text-muted text-sm">No injuries - all fit!</p>' : ''}
+        ${injured.map(p => `
+          <div class="player-card" onclick="showPlayerProfile('${p.id}')">
+            <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+            <div class="player-card-info">
+              <div class="player-card-name">${p.firstName} ${p.lastName}</div>
+              <div class="player-card-meta">
+                <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+                <span class="text-red">${p.injuryType}</span>
+              </div>
+            </div>
+            <div style="text-align:right">
+              <div class="text-red fw-700">${p.injuryWeeks}w</div>
+              <div class="text-muted text-sm">out</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Suspended Players</span>
+          <span class="card-subtitle">${suspended.length} banned</span>
+        </div>
+        ${suspended.length === 0 ? '<p class="text-muted text-sm">No suspensions</p>' : ''}
+        ${suspended.map(p => `
+          <div class="player-card" onclick="showPlayerProfile('${p.id}')">
+            <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+            <div class="player-card-info">
+              <div class="player-card-name">${p.firstName} ${p.lastName}</div>
+              <div class="player-card-meta">
+                <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+                <span class="text-red">Suspended</span>
+              </div>
+            </div>
+            <div style="text-align:right">
+              <div class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+// ─── Leaderboards / Stats ────────────────────────────────────────────────────
+async function renderLeaderboards(container) {
+  try {
+    const data = await api.get('/leaderboards');
+    const statsTab = state.leaderboardTab || 'scorers';
+
+    const tabs = [
+      { id: 'scorers', label: 'Top Scorers' },
+      { id: 'assists', label: 'Top Assists' },
+      { id: 'ovr', label: 'Best Players' },
+      { id: 'value', label: 'Most Valuable' },
+      { id: 'career', label: 'All-Time' },
+    ];
+
+    let listHtml = '';
+    let list = [];
+
+    if (statsTab === 'scorers') {
+      list = data.topScorers || [];
+      listHtml = list.map((p, i) => `
+        <div class="player-card" onclick="showPlayerProfile('${p.id}')">
+          <div style="width:24px;text-align:center;font-weight:800;color:${i<3?'var(--gold)':'var(--text-muted)'}">${i+1}</div>
+          <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+          <div class="player-card-info">
+            <div class="player-card-name">${p.firstName} ${p.lastName}</div>
+            <div class="player-card-meta">
+              <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+              <span class="text-muted">${p.clubName || 'Unknown'}</span>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="fw-700" style="font-size:16px">${p.goals || 0}</div>
+            <div class="text-muted text-sm">goals</div>
+          </div>
+        </div>
+      `).join('');
+    } else if (statsTab === 'assists') {
+      list = data.topAssists || [];
+      listHtml = list.map((p, i) => `
+        <div class="player-card" onclick="showPlayerProfile('${p.id}')">
+          <div style="width:24px;text-align:center;font-weight:800;color:${i<3?'var(--gold)':'var(--text-muted)'}">${i+1}</div>
+          <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+          <div class="player-card-info">
+            <div class="player-card-name">${p.firstName} ${p.lastName}</div>
+            <div class="player-card-meta">
+              <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+              <span class="text-muted">${p.clubName || 'Unknown'}</span>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="fw-700" style="font-size:16px">${p.assists || 0}</div>
+            <div class="text-muted text-sm">assists</div>
+          </div>
+        </div>
+      `).join('');
+    } else if (statsTab === 'ovr') {
+      list = data.highestOvr || [];
+      listHtml = list.map((p, i) => `
+        <div class="player-card" onclick="showPlayerProfile('${p.id}')">
+          <div style="width:24px;text-align:center;font-weight:800;color:${i<3?'var(--gold)':'var(--text-muted)'}">${i+1}</div>
+          <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+          <div class="player-card-info">
+            <div class="player-card-name">${p.firstName} ${p.lastName}</div>
+            <div class="player-card-meta">
+              <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+              <span class="text-muted">Age ${p.age} &middot; ${p.clubName || 'Unknown'}</span>
+            </div>
+          </div>
+          <div class="ovr-badge ${ovrClass(p.ovr)}">${p.ovr}</div>
+        </div>
+      `).join('');
+    } else if (statsTab === 'value') {
+      list = data.mostValuable || [];
+      listHtml = list.map((p, i) => `
+        <div class="player-card" onclick="showPlayerProfile('${p.id}')">
+          <div style="width:24px;text-align:center;font-weight:800;color:${i<3?'var(--gold)':'var(--text-muted)'}">${i+1}</div>
+          <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+          <div class="player-card-info">
+            <div class="player-card-name">${p.firstName} ${p.lastName}</div>
+            <div class="player-card-meta">
+              <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+              <span class="text-muted">OVR ${p.ovr} &middot; ${p.clubName || 'Unknown'}</span>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="money fw-700">${formatMoney(p.value)}</div>
+          </div>
+        </div>
+      `).join('');
+    } else if (statsTab === 'career') {
+      list = data.topCareerScorers || [];
+      listHtml = list.map((p, i) => `
+        <div class="player-card" onclick="showPlayerProfile('${p.id}')">
+          <div style="width:24px;text-align:center;font-weight:800;color:${i<3?'var(--gold)':'var(--text-muted)'}">${i+1}</div>
+          <img class="player-card-avatar" src="${playerAvatarUrl(p)}" alt="">
+          <div class="player-card-info">
+            <div class="player-card-name">${p.firstName} ${p.lastName}</div>
+            <div class="player-card-meta">
+              <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+              <span class="text-muted">${p.clubName || 'Unknown'} &middot; ${p.careerAppearances||0} apps</span>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="fw-700" style="font-size:16px">${p.careerGoals || 0}</div>
+            <div class="text-muted text-sm">career goals</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    container.innerHTML = `
+      <div class="section-header">
+        <div>
+          <div class="section-title">League Stats</div>
+          <div class="section-subtitle">Season leaderboards</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        ${tabs.map(t => `<button class="tab ${statsTab === t.id ? 'active' : ''}" onclick="state.leaderboardTab='${t.id}';renderLeaderboards(document.getElementById('main-content'))">${t.label}</button>`).join('')}
+      </div>
+
+      ${list.length === 0 ? '<div class="empty-state"><p>No data yet</p></div>' : listHtml}
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+// ─── Awards ──────────────────────────────────────────────────────────────────
+async function renderAwards(container) {
+  try {
+    const data = await api.get('/awards');
+    const awards = data.awards || [];
+
+    container.innerHTML = `
+      <div class="section-header">
+        <div>
+          <div class="section-title">Hall of Fame</div>
+          <div class="section-subtitle">Season awards &amp; records</div>
+        </div>
+      </div>
+
+      ${awards.length === 0 ? `
+        <div class="empty-state">
+          <div class="icon">&#127942;</div>
+          <h3>No Awards Yet</h3>
+          <p>Complete a season to see awards and champions here.</p>
+        </div>
+      ` : ''}
+
+      ${awards.map(a => `
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Season ${a.seasonNumber}</span>
+            <span class="matchday-badge">S${a.seasonNumber}</span>
+          </div>
+
+          ${a.champion ? `
+            <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+              <span style="font-size:24px">&#127942;</span>
+              <div>
+                <div class="fw-700">Champion</div>
+                <div class="text-muted text-sm">${a.champion.name} &middot; ${a.champion.points} pts</div>
+              </div>
+            </div>
+          ` : ''}
+
+          ${a.topScorer ? `
+            <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+              <span style="font-size:20px">&#9917;</span>
+              <div>
+                <div class="fw-700">Top Scorer</div>
+                <div class="text-muted text-sm">${a.topScorer.name} &middot; ${a.topScorer.goals} goals</div>
+              </div>
+            </div>
+          ` : ''}
+
+          ${a.topAssister ? `
+            <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+              <span style="font-size:20px">&#127919;</span>
+              <div>
+                <div class="fw-700">Top Assister</div>
+                <div class="text-muted text-sm">${a.topAssister.name} &middot; ${a.topAssister.assists} assists</div>
+              </div>
+            </div>
+          ` : ''}
+
+          ${a.bestYoung ? `
+            <div style="display:flex;align-items:center;gap:12px;padding:8px 0;">
+              <span style="font-size:20px">&#11088;</span>
+              <div>
+                <div class="fw-700">Best Young Player</div>
+                <div class="text-muted text-sm">${a.bestYoung.name} &middot; OVR ${a.bestYoung.ovr} &middot; Age ${a.bestYoung.age}</div>
+              </div>
+            </div>
+          ` : ''}
+
+          ${a.relegated && a.relegated.length > 0 ? `
+            <div style="padding:8px 0;border-top:1px solid var(--border)">
+              <div class="text-muted text-sm" style="margin-bottom:4px">Relegated:</div>
+              ${a.relegated.map(r => `<span class="text-red text-sm">${r.name}</span>`).join(', ')}
+            </div>
+          ` : ''}
+        </div>
+      `).join('')}
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+// ─── Player Profile Modal ────────────────────────────────────────────────────
+async function showPlayerProfile(playerId) {
+  try {
+    const data = await api.get(`/players/${playerId}/career`);
+    const p = data.player;
+    const cs = data.careerStats;
+    const history = data.seasonHistory || [];
+    const recent = data.recentMatches || [];
+
+    const attrRows = [
+      { label: 'Pace', value: p.pace },
+      { label: 'Shooting', value: p.shooting },
+      { label: 'Passing', value: p.passing },
+      { label: 'Defending', value: p.defending },
+      { label: 'Physical', value: p.physical },
+      { label: 'Goalkeeping', value: p.goalkeeping },
+    ];
+
+    openModal(`${p.firstName} ${p.lastName}`, `
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px">
+        <img src="${playerAvatarUrl(p)}" style="width:64px;height:64px;border-radius:50%;object-fit:cover" alt="">
+        <div>
+          <div style="font-size:18px;font-weight:700">${p.firstName} ${p.lastName}</div>
+          <div class="text-muted text-sm">${p.position} &middot; Age ${p.age} &middot; ${data.clubName}</div>
+          <div style="margin-top:4px">
+            <span class="ovr-badge ${ovrClass(p.ovr)}" style="font-size:16px;padding:4px 12px">${p.ovr}</span>
+            <span class="text-muted text-sm" style="margin-left:8px">Pot ${p.potential}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:16px">
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Apps</span>
+          <span class="attr-value">${cs.appearances}</span>
+        </div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Goals</span>
+          <span class="attr-value">${cs.goals}</span>
+        </div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Assists</span>
+          <span class="attr-value">${cs.assists}</span>
+        </div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Value</span>
+          <span class="attr-value money">${formatMoney(p.value)}</span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:16px">
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Fitness</span>
+          <span class="attr-value">${p.fitness}%</span>
+        </div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Morale</span>
+          <span class="attr-value">${p.morale || 70}%</span>
+        </div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Form</span>
+          <span class="attr-value">${p.form || 70}%</span>
+        </div>
+      </div>
+
+      ${p.injuryType ? `
+        <div style="padding:8px 12px;background:rgba(224,85,85,0.1);border:1px solid var(--red-dim);border-radius:var(--radius);margin-bottom:12px">
+          <span class="text-red fw-700">${p.injuryType}</span>
+          <span class="text-muted text-sm" style="margin-left:8px">${p.injuryWeeks} weeks out</span>
+        </div>
+      ` : ''}
+
+      ${p.suspended ? `
+        <div style="padding:8px 12px;background:rgba(224,85,85,0.1);border:1px solid var(--red-dim);border-radius:var(--radius);margin-bottom:12px">
+          <span class="text-red fw-700">Suspended</span>
+        </div>
+      ` : ''}
+
+      <div class="card-title mb-8">Attributes</div>
+      <div class="player-attrs" style="margin-bottom:16px">
+        ${attrRows.map(a => `
+          <div class="attr-row">
+            <span class="attr-label">${a.label}</span>
+            <span class="attr-value" style="color:${a.value>=75?'var(--green-bright)':a.value>=55?'var(--gold)':'var(--red)'}">${a.value}</span>
+          </div>
+        `).join('')}
+      </div>
+
+      ${history.length > 0 ? `
+        <div class="card-title mb-8">Season History</div>
+        <div style="margin-bottom:16px">
+          ${history.map(h => `
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+              <span>S${h.season} &middot; ${h.clubName}</span>
+              <span class="text-muted">${h.appearances} apps &middot; ${h.goals} G &middot; ${h.assists} A</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      ${recent.length > 0 ? `
+        <div class="card-title mb-8">Recent Matches</div>
+        ${recent.map(m => `
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+            <span>MD${m.matchday}: ${m.homeName} ${m.homeGoals}-${m.awayGoals} ${m.awayName}</span>
+            <span>${m.goals > 0 ? m.goals + 'G ' : ''}${m.assists > 0 ? m.assists + 'A' : '-'}</span>
+          </div>
+        `).join('')}
+      ` : ''}
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px">
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Career Apps</span>
+          <span class="attr-value">${cs.appearances}</span>
+        </div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Career Goals</span>
+          <span class="attr-value">${cs.goals}</span>
+        </div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Career Assists</span>
+          <span class="attr-value">${cs.assists}</span>
+        </div>
+      </div>
+    `);
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+// ─── Club Profile Modal ──────────────────────────────────────────────────────
+async function showClubProfile(clubId) {
+  try {
+    const data = await api.get(`/clubs/${clubId}`);
+    const club = data.club;
+    const standing = data.standing;
+    const stats = data.stats;
+    const formGuide = data.formGuide || [];
+    const squad = data.squad || [];
+    const recentMatches = data.recentMatches || [];
+
+    openModal(club.name, `
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--green),var(--green-light));display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 8px">&#9917;</div>
+        <div style="font-size:18px;font-weight:800">${club.name}</div>
+        <div class="text-muted text-sm">${club.stadium} &middot; ${club.city}</div>
+        ${standing ? `<div class="matchday-badge" style="margin-top:8px">${standing.position}${getOrdinal(standing.position)} &middot; ${standing.points} pts</div>` : ''}
+      </div>
+
+      ${formGuide.length > 0 ? `
+        <div style="display:flex;justify-content:center;gap:4px;margin-bottom:12px">
+          ${formGuide.map(r => `<span class="form-dot ${r.toLowerCase()}">${r}</span>`).join('')}
+        </div>
+      ` : ''}
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:16px">
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Avg OVR</span>
+          <span class="attr-value">${stats.avgOvr}</span>
+        </div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Squad</span>
+          <span class="attr-value">${stats.squadSize}</span>
+        </div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Avg Age</span>
+          <span class="attr-value">${stats.avgAge}</span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:16px">
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Squad Value</span>
+          <span class="attr-value money">${formatMoney(stats.totalValue)}</span>
+        </div>
+        <div class="attr-row" style="flex-direction:column;align-items:center;gap:2px">
+          <span class="attr-label">Injured</span>
+          <span class="attr-value ${stats.injuredCount > 0 ? 'text-red' : ''}">${stats.injuredCount}</span>
+        </div>
+      </div>
+
+      ${standing ? `
+        <div class="card-title mb-8">League Record</div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:16px;text-align:center">
+          <div><div class="fw-700">${standing.played}</div><div class="text-muted text-sm">P</div></div>
+          <div><div class="fw-700 text-green">${standing.won}</div><div class="text-muted text-sm">W</div></div>
+          <div><div class="fw-700 text-gold">${standing.drawn}</div><div class="text-muted text-sm">D</div></div>
+          <div><div class="fw-700 text-red">${standing.lost}</div><div class="text-muted text-sm">L</div></div>
+          <div><div class="fw-700">${standing.goalsFor}-${standing.goalsAgainst}</div><div class="text-muted text-sm">GF-GA</div></div>
+          <div><div class="fw-700">${standing.points}</div><div class="text-muted text-sm">Pts</div></div>
+        </div>
+      ` : ''}
+
+      <div class="card-title mb-8">Top Players</div>
+      ${squad.slice(0, 5).map(p => `
+        <div class="player-card" style="padding:8px" onclick="closeModal();setTimeout(()=>showPlayerProfile('${p.id}'),300)">
+          <img class="player-card-avatar" style="width:32px;height:32px" src="${playerAvatarUrl(p)}" alt="">
+          <div class="player-card-info">
+            <div class="player-card-name" style="font-size:12px">${p.firstName} ${p.lastName}</div>
+            <div class="player-card-meta">
+              <span class="pos-badge pos-${p.position}" style="font-size:9px;padding:1px 6px">${p.position}</span>
+              <span class="text-muted text-sm">Age ${p.age}</span>
+            </div>
+          </div>
+          <div class="ovr-badge ${ovrClass(p.ovr)}" style="font-size:11px">${p.ovr}</div>
+        </div>
+      `).join('')}
+
+      ${recentMatches.length > 0 ? `
+        <div class="card-title mb-8" style="margin-top:12px">Recent Results</div>
+        ${recentMatches.map(m => `
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+            <span>${m.homeName || 'Home'} ${m.homeGoals}-${m.awayGoals} ${m.awayName || 'Away'}</span>
+            <span class="text-muted">MD${m.matchday}</span>
+          </div>
+        `).join('')}
+      ` : ''}
+    `);
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+function getOrdinal(n) {
+  const s = ['th','st','nd','rd'];
+  const v = n % 100;
+  return s[(v-20)%10] || s[v] || s[0];
 }
 
 // ─── Boot ────────────────────────────────────────────────────────────────────

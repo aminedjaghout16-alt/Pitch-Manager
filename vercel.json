@@ -23,5 +23,11 @@
       "src": "/(.*)",
       "dest": "/server.js"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/admin/simulate",
+      "schedule": "*/2 * * * *"
+    }
   ]
 }

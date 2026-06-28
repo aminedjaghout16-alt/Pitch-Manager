@@ -1,4 +1,4 @@
-const { getDb } = require('./db');
+const { query, queryOne } = require('./db');
 
 const FIRST_NAMES = [
   'James','Daniel','Marcus','Harry','Jack','Oliver','Charlie','George','Lewis','Luke',
@@ -120,14 +120,12 @@ function generatePlayer(clubId, forcedPosition = null, targetOvr = null) {
   const attrs = generateAttributes(position, ovr);
   const actualOvr = calculateOVR(position, attrs);
   const potential = Math.max(actualOvr, Math.min(99, actualOvr + (age < 24 ? rand(2,12) : age < 28 ? rand(0,5) : 0)));
-  
-  // Contract length (1-5 years)
   const contractYears = rand(1,5);
   
   return {
-    clubId: clubId || 'free',
-    firstName: pick(FIRST_NAMES),
-    lastName: pick(LAST_NAMES),
+    club_id: clubId || null,
+    first_name: pick(FIRST_NAMES),
+    last_name: pick(LAST_NAMES),
     age, position,
     ovr: actualOvr,
     ...attrs,
@@ -136,12 +134,16 @@ function generatePlayer(clubId, forcedPosition = null, targetOvr = null) {
     salary: calculateSalary(actualOvr, age),
     fitness: rand(85,100),
     morale: rand(60,90),
-    form: rand(60,90), // Current form (affects match performance)
+    form: rand(60,90),
     goals: 0, assists: 0, appearances: 0,
-    yellowCards: 0, redCards: 0,
-    injuryType: null, injuryWeeks: 0, suspended: false,
-    isListed: false, askingPrice: 0,
-    contractYears, // Years remaining on contract
+    yellow_cards: 0, red_cards: 0,
+    career_goals: 0, career_assists: 0, career_appearances: 0,
+    career_yellow_cards: 0, career_red_cards: 0,
+    career_clean_sheets: 0, career_motm: 0,
+    injury_type: null, injury_weeks: 0, suspended: false,
+    is_listed: false, asking_price: 0,
+    contract_years: contractYears,
+    season_history: [],
   };
 }
 
@@ -161,18 +163,50 @@ function generateSquad(clubId, avgOvr = 65) {
 }
 
 async function insertPlayer(player) {
-  const db = getDb();
-  const ref = await db.collection('players').add(player);
-  return ref.id;
+  const p = player;
+  const res = await query(`
+    INSERT INTO players (
+      club_id, first_name, last_name, age, position, ovr, potential,
+      pace, shooting, passing, defending, physical, goalkeeping,
+      fitness, morale, form,
+      goals, assists, appearances, yellow_cards, red_cards,
+      career_goals, career_assists, career_appearances,
+      career_yellow_cards, career_red_cards, career_clean_sheets, career_motm,
+      value, salary, contract_years,
+      is_listed, asking_price, injury_type, injury_weeks, suspended,
+      season_history
+    ) VALUES (
+      $1,$2,$3,$4,$5,$6,$7,
+      $8,$9,$10,$11,$12,$13,
+      $14,$15,$16,
+      $17,$18,$19,$20,$21,
+      $22,$23,$24,
+      $25,$26,$27,$28,
+      $29,$30,$31,
+      $32,$33,$34,$35,$36,
+      $37
+    ) RETURNING id
+  `, [
+    p.club_id, p.first_name, p.last_name, p.age, p.position, p.ovr, p.potential,
+    p.pace, p.shooting, p.passing, p.defending, p.physical, p.goalkeeping,
+    p.fitness, p.morale, p.form,
+    p.goals, p.assists, p.appearances, p.yellow_cards, p.red_cards,
+    p.career_goals, p.career_assists, p.career_appearances,
+    p.career_yellow_cards, p.career_red_cards, p.career_clean_sheets, p.career_motm,
+    p.value, p.salary, p.contract_years,
+    p.is_listed, p.asking_price, p.injury_type, p.injury_weeks, p.suspended,
+    JSON.stringify(p.season_history || [])
+  ]);
+  return res.rows[0].id;
 }
 
 function generateTransferMarket(count = 40) {
   const players = [];
   for (let i = 0; i < count; i++) {
     const ovr = rand(50,80);
-    const p = generatePlayer('free', null, ovr);
-    p.isListed = true;
-    p.askingPrice = Math.round(p.value * (1 + Math.random() * 0.3));
+    const p = generatePlayer(null, null, ovr);
+    p.is_listed = true;
+    p.asking_price = Math.round(p.value * (1 + Math.random() * 0.3));
     players.push(p);
   }
   return players;
